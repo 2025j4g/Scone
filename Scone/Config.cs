@@ -7,7 +7,5 @@ public struct Config
 	public string? OutputDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 	public int DarkMode = 2;
 
-    public Config(string filePath)
-    {
-    }
+	public Config() { }
 }

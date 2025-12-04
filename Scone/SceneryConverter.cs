@@ -560,7 +560,11 @@ public class SceneryConverter
 											root.AppendChild(CreateLodElement(doc, modelObj.radius, modelObj.minSize, i + 1 < modelObjectsByLod.Length ? modelObjectsByLod[i + 1].minSize : (int?)null));
 										}
 									}
-									// foreach ()
+									foreach (LightObject light in current.lightObjects!)
+									{
+										XmlNode lightElem = CreateLightElement(doc, light);
+										root.AppendChild(lightElem);
+									}
 									File.WriteAllText(Path.Combine(path, $"{current.name}.xml"), root.OuterXml);
 								}
 							}
@@ -602,10 +606,42 @@ public class SceneryConverter
 		}
 	}
 
-	private static XmlNode CreateLightElement(LightObject light)
+	private static XmlNode CreateLightElement(XmlDocument doc, LightObject light)
 	{
-		XmlElement lightElem = new XmlDocument().CreateElement("light");
-		lightElem.AppendChild(new XmlDocument().CreateElement("name"))!.InnerText = light.name ?? "Unnamed_Light";
+		XmlElement lightElem = doc.CreateElement("light");
+		lightElem.AppendChild(doc.CreateElement("name"))!.InnerText = light.name ?? "Unnamed_Light";
+		lightElem.AppendChild(doc.CreateElement("type"))!.InnerText = light.cutoffAngle <= 90 ? "spot" : "point";
+		XmlElement positionElem = lightElem.AppendChild(doc.CreateElement("position")) as XmlElement;
+		positionElem!.AppendChild(doc.CreateElement("x-m"))!.InnerText = light.position.X.ToString();
+		positionElem.AppendChild(doc.CreateElement("y-m"))!.InnerText = light.position.Y.ToString();
+		positionElem.AppendChild(doc.CreateElement("z-m"))!.InnerText = light.position.Z.ToString();
+
+		if (light.cutoffAngle <= 90)
+		{
+			lightElem.AppendChild(doc.CreateElement("pitch-deg"))!.InnerText = light.pitchDeg.ToString();
+			lightElem.AppendChild(doc.CreateElement("roll-deg"))!.InnerText = light.rollDeg.ToString();
+			lightElem.AppendChild(doc.CreateElement("heading-deg"))!.InnerText = light.headingDeg.ToString();
+		}
+
+		XmlElement colorElem = lightElem.AppendChild(doc.CreateElement("color")) as XmlElement;
+		colorElem!.AppendChild(doc.CreateElement("r"))!.InnerText = light.color.X.ToString();
+		colorElem.AppendChild(doc.CreateElement("g"))!.InnerText = light.color.Y.ToString();
+		colorElem.AppendChild(doc.CreateElement("b"))!.InnerText = light.color.Z.ToString();
+		colorElem.AppendChild(doc.CreateElement("a"))!.InnerText = light.color.W.ToString();
+		lightElem.AppendChild(doc.CreateElement("intensity"))!.InnerText = light.intensity.ToString();
+
+		if (light.cutoffAngle <= 90)
+		{
+			lightElem.AppendChild(doc.CreateElement("spot-exponent"))!.InnerText = light.spot_exponent.ToString();
+			lightElem.AppendChild(doc.CreateElement("spot-cutoff"))!.InnerText = light.cutoffAngle.ToString();
+			lightElem.AppendChild(doc.CreateElement("range-m"))!.InnerText = light.range_m.ToString();
+		}
+
+		if (light.dayNightCycle || light.flashDuration > 0 || light.flashFrequency > 0 || light.rotationSpeed != 0)
+		{
+			// Combine all of these things to the dim factor expression
+			// XmlElement dimFactor = lightElem.AppendChild(doc.CreateElement("dim-factor")) as XmlElement;
+		}
 		return lightElem;
 	}
 
