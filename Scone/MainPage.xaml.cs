@@ -56,8 +56,8 @@ public sealed partial class MainPage : Page
         folderPicker.FileTypeFilter.Add("*");
 
 		// Get the current window's handle
-		nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
-		WinRT.Interop.InitializeWithWindow.Initialize(folderPicker, hwnd);
+		nint hwnd = WindowNative.GetWindowHandle(App.MainWindow);
+        InitializeWithWindow.Initialize(folderPicker, hwnd);
 
 		StorageFolder folder = await folderPicker.PickSingleFolderAsync();
 		if (folder != null)

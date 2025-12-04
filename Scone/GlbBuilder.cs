@@ -1,4 +1,3 @@
-namespace Scone;
 
 using System.Numerics;
 using Newtonsoft.Json.Linq;
@@ -7,6 +6,7 @@ using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
 using SharpGLTF.Scenes;
 
+namespace Scone;
 public class GlbBuilder
 {
 
