@@ -34,3 +34,85 @@ jobs:
       - name: Build Scone (Debug)
         shell: pwsh
         run: msbuild ./Scone/Scone.csproj /r
+
+  build_windows:
+    name: Build Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, x86, arm64]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install Dependencies
+        timeout-minutes: ${{ fromJSON(env.STEP_TIMEOUT_MINUTES) }}
+        uses: "./.github/steps/install_dependencies"
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.3.1
+
+      - name: Publish Scone Windows ${{ matrix.arch }}
+        shell: pwsh
+        run: dotnet publish ./Scone/Scone.csproj -c Release -r win-${{ matrix.arch }} /p:PublishProfile=win-${{ matrix.arch }}
+
+      - name: Upload Windows ${{ matrix.arch }} Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: scone-windows-${{ matrix.arch }}
+          path: ./Scone/bin/Release/net10.0-desktop/win-${{ matrix.arch }}/publish/
+
+  build_macos:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install Dependencies
+        timeout-minutes: ${{ fromJSON(env.STEP_TIMEOUT_MINUTES) }}
+        uses: "./.github/steps/install_dependencies"
+        with:
+          target-platform: 'macos'
+
+      - name: Publish Scone macOS ${{ matrix.arch }}
+        shell: bash
+        run: dotnet publish ./Scone/Scone.csproj -c Release -r osx-${{ matrix.arch }} --self-contained
+
+      - name: Upload macOS ${{ matrix.arch }} Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: scone-macos-${{ matrix.arch }}
+          path: ./Scone/bin/Release/net10.0-desktop/osx-${{ matrix.arch }}/publish/
+
+  build_linux:
+    name: Build Linux (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install Dependencies
+        timeout-minutes: ${{ fromJSON(env.STEP_TIMEOUT_MINUTES) }}
+        uses: "./.github/steps/install_dependencies"
+        with:
+          target-platform: 'linux'
+
+      - name: Publish Scone Linux ${{ matrix.arch }}
+        shell: bash
+        run: dotnet publish ./Scone/Scone.csproj -c Release -r linux-${{ matrix.arch }} --self-contained
+
+      - name: Upload Linux ${{ matrix.arch }} Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: scone-linux-${{ matrix.arch }}
+          path: ./Scone/bin/Release/net10.0-desktop/linux-${{ matrix.arch }}/publish/
