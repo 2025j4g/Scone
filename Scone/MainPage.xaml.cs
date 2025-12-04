@@ -9,7 +9,7 @@ public sealed partial class MainPage : Page
 
 	public MainPage()
 	{
-		this.InitializeComponent();
+		InitializeComponent();
 		TasksList.ItemsSource = tasks;
 		UpdateEmptyState();
 
@@ -135,7 +135,7 @@ public sealed partial class MainPage : Page
 			Title = "Error",
 			Content = message,
 			CloseButtonText = "OK",
-			XamlRoot = this.XamlRoot
+			XamlRoot = XamlRoot
 		};
 
 		await dialog.ShowAsync();

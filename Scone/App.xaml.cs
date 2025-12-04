@@ -2,13 +2,22 @@ namespace Scone;
 
 public partial class App : Application
 {
+	public static readonly string TempPath = Path.GetTempPath() + "scone";
+	public static readonly string StorePath = ApplicationData.Current.LocalFolder.Path;
+	public static readonly string ConfigPath = Path.Combine(StorePath, "config.json");
+	public static Config AppConfig = new();
 	/// <summary>
 	/// Initializes the singleton application object. This is the first line of authored code
 	/// executed, and as such is the logical equivalent of main() or WinMain().
 	/// </summary>
 	public App()
 	{
-		this.InitializeComponent();
+		if (File.Exists(ConfigPath))
+		{
+			string json = File.ReadAllText(ConfigPath);
+			AppConfig = System.Text.Json.JsonSerializer.Deserialize<Config>(json);
+		}
+		InitializeComponent();
 	}
 
 	public static Window? MainWindow { get; private set; }
