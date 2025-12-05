@@ -11,7 +11,10 @@ namespace Scone;
 
 public class SceneryConverter
 {
-	public static void ConvertScenery(string inputPath, string outputPath)
+	public int BytesTotal { get; private set; } = 0;
+	public int BytesProcessed { get; private set; } = 0;
+	public string Status { get; private set; } = "Idle";
+	public void ConvertScenery(string inputPath, string outputPath)
 	{
 		if (!Directory.Exists(inputPath))
 		{
@@ -28,10 +31,13 @@ public class SceneryConverter
 		Console.WriteLine($"Files found: \n{string.Join("\n", allBglFiles)}");
 		Console.ReadLine();
 		Dictionary<Guid, List<LibraryObject>> libraryObjects = [];
+		int totalLibraryObjects = 0;
+		// Gather placements first
 		foreach (string file in allBglFiles)
 		{
 			using FileStream fs = new(file, FileMode.Open, FileAccess.Read);
 			using BinaryReader br = new(fs);
+			Status = $"Looking for placements in {Path.GetFileName(file)}...";
 
 			// Read and validate BGL header
 			byte[] magicNumber1 = br.ReadBytes(4);
@@ -41,7 +47,7 @@ public class SceneryConverter
 				!magicNumber2.SequenceEqual(new byte[] { 0x03, 0x18, 0x05, 0x08 }))
 			{
 				Console.WriteLine("Invalid BGL header");
-				return;
+				continue;
 			}
 			_ = br.BaseStream.Seek(0x14, SeekOrigin.Begin);
 			uint recordCt = br.ReadUInt32();
@@ -135,14 +141,16 @@ public class SceneryConverter
 					{
 						libraryObjects[guid] = [];
 					}
+					Status = Status = $"Looking for placements in {Path.GetFileName(file)}... found {totalLibraryObjects}";
 					libraryObjects[guid].Add(libObj);
-					Console.WriteLine($"{guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
+					// Console.WriteLine($"{guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 					bytesRead += size;
 				}
 			}
 		}
 
-		// Look for models after placements have been gathered
+		// This is only really for the UI
+		// There should be a better way to do this that doesn't have so much repetition, but that's the best I've got for now
 		foreach (string file in allBglFiles)
 		{
 			using FileStream fs = new(file, FileMode.Open, FileAccess.Read);
@@ -156,7 +164,55 @@ public class SceneryConverter
 				!magicNumber2.SequenceEqual(new byte[] { 0x03, 0x18, 0x05, 0x08 }))
 			{
 				Console.WriteLine("Invalid BGL header");
-				return;
+				continue;
+			}
+			_ = br.BaseStream.Seek(0x14, SeekOrigin.Begin);
+			uint recordCt = br.ReadUInt32();
+
+			// Skip 0x38-byte header
+			_ = br.BaseStream.Seek(0x38, SeekOrigin.Begin);
+
+			List<int> mdlDataOffsets = [];
+			List<int> sceneryObjectOffsets = [];
+			for (int i = 0; i < recordCt; i++)
+			{
+				long recordStartPos = br.BaseStream.Position;
+				uint recType = br.ReadUInt32();
+				_ = br.BaseStream.Seek(recordStartPos + 0x0C, SeekOrigin.Begin);
+				uint startSubsection = br.ReadUInt32();
+				_ = br.BaseStream.Seek(recordStartPos + 0x10, SeekOrigin.Begin);
+				uint recSize = br.ReadUInt32();
+				if (recType == 0x002B) // ModelData
+				{
+					mdlDataOffsets.Add((int)startSubsection);
+				}
+			}
+			List<(int offset, int size)> modelDataSubrecords = [];
+			foreach (int modelDataOffset in mdlDataOffsets)
+			{
+				_ = br.BaseStream.Seek(modelDataOffset + 8, SeekOrigin.Begin);
+				int subrecOffset = br.ReadInt32();
+				int size = br.ReadInt32();
+				BytesTotal += size;
+			}
+		}
+
+		// Look for models after placements have been gathered
+		foreach (string file in allBglFiles)
+		{
+			using FileStream fs = new(file, FileMode.Open, FileAccess.Read);
+			using BinaryReader br = new(fs);
+			Status = $"Looking for models in {Path.GetFileName(file)}...";
+
+			// Read and validate BGL header
+			byte[] magicNumber1 = br.ReadBytes(4);
+			_ = br.BaseStream.Seek(0x10, SeekOrigin.Begin);
+			byte[] magicNumber2 = br.ReadBytes(4);
+			if (!magicNumber1.SequenceEqual(new byte[] { 0x01, 0x02, 0x92, 0x19 }) ||
+				!magicNumber2.SequenceEqual(new byte[] { 0x03, 0x18, 0x05, 0x08 }))
+			{
+				Console.WriteLine("Invalid BGL header");
+				continue;
 			}
 			_ = br.BaseStream.Seek(0x14, SeekOrigin.Begin);
 			uint recordCt = br.ReadUInt32();
@@ -203,6 +259,7 @@ public class SceneryConverter
 				{
 					_ = br.BaseStream.Seek(subOffset + (24 * objectsRead), SeekOrigin.Begin);
 					byte[] guidBytes = br.ReadBytes(16);
+					BytesProcessed += 16;
 					Guid guid = new(guidBytes);
 					uint startModelDataOffset = br.ReadUInt32();
 					uint modelDataSize = br.ReadUInt32();
@@ -606,7 +663,7 @@ public class SceneryConverter
 		}
 	}
 
-	private static XmlNode CreateLightElement(XmlDocument doc, LightObject light)
+	private XmlNode CreateLightElement(XmlDocument doc, LightObject light)
 	{
 		XmlElement lightElem = doc.CreateElement("light");
 		lightElem.AppendChild(doc.CreateElement("name"))!.InnerText = light.name ?? "Unnamed_Light";
@@ -645,7 +702,7 @@ public class SceneryConverter
 		return lightElem;
 	}
 
-	private static XmlNode CreateLodElement(XmlDocument doc, float radius, int minSize, int? maxSize)
+	private XmlNode CreateLodElement(XmlDocument doc, float radius, int minSize, int? maxSize)
 	{
 		XmlElement lodElem = doc.CreateElement("animation");
 		lodElem.AppendChild(doc.CreateElement("type"))!.InnerText = "range";
@@ -709,7 +766,7 @@ public class SceneryConverter
 			// Second <prod> for max
 			XmlElement prodMax2 = doc.CreateElement("prod");
 			XmlElement valueMaxSize = doc.CreateElement("value");
-			valueMaxSize.InnerText = maxSize.ToString();
+			valueMaxSize.InnerText = maxSize.ToString()!;
 			XmlElement tanMax = doc.CreateElement("tan");
 			XmlElement tanProdMax = doc.CreateElement("prod");
 			XmlElement valueHalfMax = doc.CreateElement("value");
@@ -735,7 +792,7 @@ public class SceneryConverter
 		return lodElem;
 	}
 
-	enum Flags
+	private enum Flags
 	{
 		IsAboveAGL = 0,
 		NoAutogenSuppression = 1,
@@ -746,7 +803,7 @@ public class SceneryConverter
 		NoZTest = 6,
 	}
 
-	struct LibraryObject
+	private struct LibraryObject
 	{
 		public int id;
 		public int size;
@@ -762,13 +819,13 @@ public class SceneryConverter
 		public double scale;
 	}
 
-	struct LodData
+	private struct LodData
 	{
 		public string name;
 		public int minSize;
 	}
 
-	struct ModelObject
+	private struct ModelObject
 	{
 		public string name;
 		public int minSize;
@@ -776,7 +833,7 @@ public class SceneryConverter
 		public float radius;
 	}
 
-	struct LightObject
+	private struct LightObject
 	{
 		public string? name;
 		public Vector3 position;
@@ -795,7 +852,7 @@ public class SceneryConverter
 		public float rotationSpeed;
 	}
 
-	struct ModelData
+	private struct ModelData
 	{
 		public Guid guid;
 		public string name;
