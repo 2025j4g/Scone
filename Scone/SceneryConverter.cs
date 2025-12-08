@@ -9,11 +9,41 @@ using SharpGLTF.Schema2;
 
 namespace Scone;
 
-public class SceneryConverter
+public class SceneryConverter : INotifyPropertyChanged
 {
-	public int BytesTotal { get; private set; } = 0;
-	public int BytesProcessed { get; private set; } = 0;
-	public string Status { get; private set; } = "Idle";
+	private int _bytesTotal = 0;
+	public int BytesTotal
+	{
+		get => _bytesTotal;
+		private set
+		{
+			_bytesTotal = value;
+			OnPropertyChanged();
+		}
+	}
+	
+	private int _bytesProcessed = 0;
+	public int BytesProcessed
+	{
+		get => _bytesProcessed;
+		private set
+		{
+			_bytesProcessed = value;
+			OnPropertyChanged();
+		}
+	}
+	
+	private string _status = "Idle";
+	public string Status
+	{
+		get => _status;
+		private set
+		{
+			_status = value;
+			OnPropertyChanged();
+		}
+	}
+	public event PropertyChangedEventHandler? PropertyChanged;
 	public void ConvertScenery(string inputPath, string outputPath)
 	{
 		if (!Directory.Exists(inputPath))
@@ -22,14 +52,7 @@ public class SceneryConverter
 			return;
 		}
 
-		if (!Directory.Exists(outputPath))
-		{
-			_ = Directory.CreateDirectory(outputPath);
-		}
-
 		string[] allBglFiles = Directory.GetFiles(inputPath, "*.bgl", SearchOption.AllDirectories);
-		Console.WriteLine($"Files found: \n{string.Join("\n", allBglFiles)}");
-		Console.ReadLine();
 		Dictionary<Guid, List<LibraryObject>> libraryObjects = [];
 		int totalLibraryObjects = 0;
 		// Gather placements first
@@ -645,6 +668,7 @@ public class SceneryConverter
 					objectsRead++;
 				}
 			}
+
 			// Write final placement files per tile
 			foreach (var kvp in finalPlacementsByTile)
 			{
@@ -668,7 +692,7 @@ public class SceneryConverter
 		XmlElement lightElem = doc.CreateElement("light");
 		lightElem.AppendChild(doc.CreateElement("name"))!.InnerText = light.name ?? "Unnamed_Light";
 		lightElem.AppendChild(doc.CreateElement("type"))!.InnerText = light.cutoffAngle <= 90 ? "spot" : "point";
-		XmlElement positionElem = lightElem.AppendChild(doc.CreateElement("position")) as XmlElement;
+		XmlElement? positionElem = lightElem.AppendChild(doc.CreateElement("position")) as XmlElement;
 		positionElem!.AppendChild(doc.CreateElement("x-m"))!.InnerText = light.position.X.ToString();
 		positionElem.AppendChild(doc.CreateElement("y-m"))!.InnerText = light.position.Y.ToString();
 		positionElem.AppendChild(doc.CreateElement("z-m"))!.InnerText = light.position.Z.ToString();
@@ -680,7 +704,7 @@ public class SceneryConverter
 			lightElem.AppendChild(doc.CreateElement("heading-deg"))!.InnerText = light.headingDeg.ToString();
 		}
 
-		XmlElement colorElem = lightElem.AppendChild(doc.CreateElement("color")) as XmlElement;
+		XmlElement? colorElem = lightElem.AppendChild(doc.CreateElement("color")) as XmlElement;
 		colorElem!.AppendChild(doc.CreateElement("r"))!.InnerText = light.color.X.ToString();
 		colorElem.AppendChild(doc.CreateElement("g"))!.InnerText = light.color.Y.ToString();
 		colorElem.AppendChild(doc.CreateElement("b"))!.InnerText = light.color.Z.ToString();
@@ -790,6 +814,11 @@ public class SceneryConverter
 			lodElem.AppendChild(maxProp);
 		}
 		return lodElem;
+	}
+
+	protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+	{
+		PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 	}
 
 	private enum Flags
