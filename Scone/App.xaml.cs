@@ -12,11 +12,24 @@ public partial class App : Application
 	/// </summary>
 	public App()
 	{
-		if (File.Exists(ConfigPath))
+		if (!Directory.Exists(TempPath))
+		{
+			Directory.CreateDirectory(TempPath);
+		}
+		if (!Directory.Exists(StorePath))
+		{
+			Directory.CreateDirectory(StorePath);
+		}
+		/* if (File.Exists(ConfigPath))
 		{
 			string json = File.ReadAllText(ConfigPath);
-			AppConfig = System.Text.Json.JsonSerializer.Deserialize<Config>(json);
+			// AppConfig = System.Text.Json.JsonSerializer.Deserialize<Config>(json);
 		}
+		Suspending += static (s, e) =>
+		{
+			// Save config on exit
+			File.WriteAllText(ConfigPath, System.Text.Json.JsonSerializer.Serialize(AppConfig));
+		}; */
 		InitializeComponent();
 	}
 
