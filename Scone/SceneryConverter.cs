@@ -490,15 +490,10 @@ public class SceneryConverter : INotifyPropertyChanged
 														Matrix4x4.CreateTranslation(translationFinal);
 
 										// Validate matrix before passing to SharpGLTF
-										static bool IsFiniteMatrix(Matrix4x4 m)
-										{
-											return float.IsFinite(m.M11) && float.IsFinite(m.M12) && float.IsFinite(m.M13) && float.IsFinite(m.M14)
-												&& float.IsFinite(m.M21) && float.IsFinite(m.M22) && float.IsFinite(m.M23) && float.IsFinite(m.M24)
-												&& float.IsFinite(m.M31) && float.IsFinite(m.M32) && float.IsFinite(m.M33) && float.IsFinite(m.M34)
-												&& float.IsFinite(m.M41) && float.IsFinite(m.M42) && float.IsFinite(m.M43) && float.IsFinite(m.M44);
-										}
-
-										if (!IsFiniteMatrix(transform))
+										if (!(float.IsFinite(transform.M11) && float.IsFinite(transform.M12) && float.IsFinite(transform.M13) && float.IsFinite(transform.M14)
+											&& float.IsFinite(transform.M21) && float.IsFinite(transform.M22) && float.IsFinite(transform.M23) && float.IsFinite(transform.M24)
+											&& float.IsFinite(transform.M31) && float.IsFinite(transform.M32) && float.IsFinite(transform.M33) && float.IsFinite(transform.M34)
+											&& float.IsFinite(transform.M41) && float.IsFinite(transform.M42) && float.IsFinite(transform.M43) && float.IsFinite(transform.M44)))
 										{
 											// Skip this mesh if transform is invalid to prevent runtime exception
 											continue;
@@ -614,15 +609,14 @@ public class SceneryConverter : INotifyPropertyChanged
 								}
 								File.WriteAllText(outGlbPath, gltfText.ToString());
 							}
-							float[] scales = [.. libraryObjects[current.guid].Where(lo => lo.scale != 1).Select(lo => (float)lo.scale).Distinct()];
-							ModelObject[] modelObjectsByLod = current.modelObjects.OrderByDescending(mo => mo.minSize).ToArray();
-							string activeName = "";
-							if (current.modelObjects.Count < 2 && scales.Length == 0 && current.lightObjects?.Count == 0)
+							float[] scales = [.. libraryObjects[current.guid].Select(lo => (float)lo.scale).Distinct()];
+							float[] scalesTrunc = [.. libraryObjects[current.guid].Where(lo => lo.scale != 1).Select(lo => (float)lo.scale).Distinct()];
+							ModelObject[] modelObjectsByLod = [.. current.modelObjects.OrderByDescending(mo => mo.minSize)];
+							bool hasXml = false;
+							Console.WriteLine($"Object count: {current.modelObjects.Count}, Scales: {string.Join(", ", scales)}, Lights: {current.lightObjects?.Count ?? 0}");
+							if (current.modelObjects.Count > 1 || scalesTrunc.Length > 0 || current.lightObjects?.Count > 0)
 							{
-								activeName = $"{current.modelObjects[0].name}.gltf";
-							}
-							else
-							{
+								hasXml = true;
 								foreach (float scale in scales)
 								{
 									XmlDocument doc = new();
@@ -642,19 +636,22 @@ public class SceneryConverter : INotifyPropertyChanged
 									}
 									foreach (LightObject light in current.lightObjects!)
 									{
-										XmlNode lightElem = CreateLightElement(doc, light);
-										root.AppendChild(lightElem);
+										root.AppendChild(CreateLightElement(doc, light));
 									}
-									File.WriteAllText(Path.Combine(path, $"{current.name}.xml"), root.OuterXml);
+									if (scale != 1)
+									{
+										root.AppendChild(CreateScaleElement(doc, scale, current));
+									}
+									File.WriteAllText(Path.Combine(path, $"{current.name}{(scale != 1 ? $"_{scale}" : string.Empty)}.xml"), root.OuterXml);
 								}
 							}
-							// activeName = $"{modelData.modelObjects[0].name}-{}"
 							if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(value[0].latitude, value[0].longitude)))
 							{
 								finalPlacementsByTile[Terrain.GetTileIndex(value[0].latitude, value[0].longitude)] = [];
 							}
 							foreach (LibraryObject libObj in value)
 							{
+								string activeName = hasXml ? $"{current.name}{(libObj.scale != 1 ? $"_{libObj.scale}" : string.Empty)}.xml" : $"{current.name}.gltf";
 								string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude:F6} {libObj.latitude:F6} {libObj.altitude} {libObj.heading:F2} {libObj.pitch:F2} {libObj.bank:F2}";
 								if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(libObj.latitude, libObj.longitude)))
 								{
@@ -724,6 +721,20 @@ public class SceneryConverter : INotifyPropertyChanged
 			// XmlElement dimFactor = lightElem.AppendChild(doc.CreateElement("dim-factor")) as XmlElement;
 		}
 		return lightElem;
+	}
+
+	private XmlNode CreateScaleElement(XmlDocument doc, float scale, ModelData model)
+	{
+		XmlElement scaleElem = doc.CreateElement("animation");
+		scaleElem.AppendChild(doc.CreateElement("type"))!.InnerText = "scale";
+		foreach (ModelObject modelObj in model.modelObjects)
+		{
+			scaleElem.AppendChild(doc.CreateElement("object-name"))!.InnerText = modelObj.name;
+		}
+		scaleElem.AppendChild(doc.CreateElement("x"))!.InnerText = scale.ToString();
+		scaleElem.AppendChild(doc.CreateElement("y"))!.InnerText = scale.ToString();
+		scaleElem.AppendChild(doc.CreateElement("z"))!.InnerText = scale.ToString();
+		return scaleElem;
 	}
 
 	private XmlNode CreateLodElement(XmlDocument doc, float radius, int minSize, int? maxSize)
