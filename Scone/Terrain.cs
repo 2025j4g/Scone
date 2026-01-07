@@ -248,7 +248,7 @@ public class Terrain
 		double elevation = 0;
 		try
 		{
-			if (!tileCache.ContainsKey(index))
+			if (!tileCache.TryGetValue(index, out TileKey? value))
 			{
 				byte[] stgData = client.GetByteArrayAsync($"{urlTopLevel}/{index}.stg").Result;
 				MatchCollection matches = new Regex(@"OBJECT (.+\.btg)", RegexOptions.Multiline).Matches(Encoding.UTF8.GetString(stgData));
@@ -265,30 +265,23 @@ public class Terrain
 					byte[] btgData = decompressedStream.ToArray();
 					meshes.Add(BtgParser.Parse(btgData));
 				}
-				tileCache[index] = new TileKey()
+
+                value = new TileKey()
 				{
 					Index = index,
 					Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
 					Locked = false,
-					Meshes = meshes
-				};
+					Models = [.. meshes.Select(BuildTileModel)]
+                };
+                tileCache[index] = value;
 			}
-			tileCache[index].Locked = true;
-			foreach (BtgParseResult mesh in tileCache[index].Meshes)
+
+            value.Locked = true;
+			foreach (TileModel model in value.Models)
 			{
-				double sinLat = Math.Sin(latitude * Math.PI / 180.0);
-				double cosLat = Math.Cos(latitude * Math.PI / 180.0);
-				double sinLon = Math.Sin(longitude * Math.PI / 180.0);
-				double cosLon = Math.Cos(longitude * Math.PI / 180.0);
-				double n = Wgs84A / Math.Sqrt(1 - Wgs84E2 * sinLat * sinLat);
-				double x = n * cosLat * cosLon;
-				double y = n * cosLat * sinLon;
-				double z = n * (1 - Wgs84E2) * sinLat;
-				Vector3d ecef = new(x, y, z);
-				Vector3d center = mesh.BoundingSphereCenter ?? Vector3d.Zero;
-				Vector3d queryPoint = ecef - center + new Vector3d(0, 0, 10000);
-				Console.WriteLine($"Query Point: {queryPoint}");
-				elevation = BtgRaycast.RaycastZ(mesh.Mesh, queryPoint);
+				double elevationCur = SampleAltitude(model, latitude, longitude);
+				elevation = elevationCur > elevation ? elevationCur : elevation;
+				Console.WriteLine($"Sampled elevation from model at {longitude}, {latitude}: {elevation} meters");
 			}
 		}
 		catch (AggregateException e)
@@ -296,7 +289,7 @@ public class Terrain
 			Console.WriteLine($"Error fetching BTG data from {$"{urlTopLevel}/{index}.stg"}: {e.Message}");
 		}
 		Console.WriteLine($"Elevation: {elevation} meters");
-		return 0 /* elevation */;
+		return elevation;
 	}
 
 	public static int GetTileIndex(double lat, double lon)
@@ -359,6 +352,162 @@ public class Terrain
 		public int Index;
 		public long Timestamp;
 		public bool Locked;
-		public List<BtgParseResult> Meshes;
+		public List<TileModel> Models;
 	}
+
+	private static byte[]? ReadBtgData(string gzPath, string btgPath)
+	{
+		if (File.Exists(gzPath))
+		{
+			using FileStream fs = new(gzPath, FileMode.Open, FileAccess.Read);
+			using GZipStream gzip = new(fs, CompressionMode.Decompress);
+			using MemoryStream ms = new();
+			gzip.CopyTo(ms);
+			return ms.ToArray();
+		}
+
+		if (File.Exists(btgPath))
+		{
+			return File.ReadAllBytes(btgPath);
+		}
+
+		return null;
+	}
+
+	private static TileModel BuildTileModel(BtgParseResult parsed)
+	{
+		DMesh3 mesh = parsed.Mesh;
+		Vector3d center = parsed.BoundingSphereCenter ?? Vector3d.Zero;
+
+		LlaVertex?[] vertices = new LlaVertex?[mesh.MaxVertexID];
+		for (int vid = 0; vid < mesh.MaxVertexID; vid++)
+		{
+			if (!mesh.IsVertex(vid)) continue;
+			Vector3d rel = mesh.GetVertex(vid);
+			Vector3d abs = center + rel;
+			LlaVertex lla = EcefToLla(abs.x, abs.y, abs.z);
+			vertices[vid] = lla;
+		}
+
+		List<TriangleModel> triangles = [];
+		for (int tid = 0; tid < mesh.MaxTriangleID; tid++)
+		{
+			if (!mesh.IsTriangle(tid)) continue;
+			Index3i tri = mesh.GetTriangle(tid);
+			if (tri.a < 0 || tri.b < 0 || tri.c < 0) continue;
+			if (tri.a >= vertices.Length || tri.b >= vertices.Length || tri.c >= vertices.Length) continue;
+			LlaVertex? v1 = vertices[tri.a];
+			LlaVertex? v2 = vertices[tri.b];
+			LlaVertex? v3 = vertices[tri.c];
+			if (v1 == null || v2 == null || v3 == null) continue;
+
+			double minLat = Math.Min(v1.Value.Lat, Math.Min(v2.Value.Lat, v3.Value.Lat));
+			double maxLat = Math.Max(v1.Value.Lat, Math.Max(v2.Value.Lat, v3.Value.Lat));
+			double minLon = Math.Min(v1.Value.Lon, Math.Min(v2.Value.Lon, v3.Value.Lon));
+			double maxLon = Math.Max(v1.Value.Lon, Math.Max(v2.Value.Lon, v3.Value.Lon));
+			triangles.Add(new TriangleModel(tri.a, tri.b, tri.c, minLat, maxLat, minLon, maxLon));
+		}
+
+		return new TileModel(vertices, triangles);
+	}
+
+	private static double SampleAltitude(TileModel model, double lat, double lon)
+	{
+		double? nearest = null;
+		double nearestDist = double.MaxValue;
+
+		foreach (TriangleModel tri in model.Triangles)
+		{
+			if (lat < tri.MinLat || lat > tri.MaxLat || lon < tri.MinLon || lon > tri.MaxLon)
+			{
+				continue;
+			}
+
+			LlaVertex v1 = model.Vertices[tri.A]!.Value;
+			LlaVertex v2 = model.Vertices[tri.B]!.Value;
+			LlaVertex v3 = model.Vertices[tri.C]!.Value;
+
+			if (TryBarycentric(lon, lat, v1.Lon, v1.Lat, v2.Lon, v2.Lat, v3.Lon, v3.Lat, out double u, out double v, out double w))
+			{
+				return (u * v1.Alt) + (v * v2.Alt) + (w * v3.Alt);
+			}
+		}
+
+		for (int i = 0; i < model.Vertices.Length; i++)
+		{
+			if (model.Vertices[i] == null) continue;
+			LlaVertex v = model.Vertices[i]!.Value;
+			double dx = lon - v.Lon;
+			double dy = lat - v.Lat;
+			double dist = (dx * dx) + (dy * dy);
+			if (dist < nearestDist)
+			{
+				nearestDist = dist;
+				nearest = v.Alt;
+			}
+		}
+
+		return nearest ?? 0;
+	}
+
+	private static bool TryBarycentric(
+		double px,
+		double py,
+		double ax,
+		double ay,
+		double bx,
+		double by,
+		double cx,
+		double cy,
+		out double u,
+		out double v,
+		out double w)
+	{
+		double v0x = bx - ax;
+		double v0y = by - ay;
+		double v1x = cx - ax;
+		double v1y = cy - ay;
+		double v2x = px - ax;
+		double v2y = py - ay;
+
+		double d00 = v0x * v0x + v0y * v0y;
+		double d01 = v0x * v1x + v0y * v1y;
+		double d11 = v1x * v1x + v1y * v1y;
+		double d20 = v2x * v0x + v2y * v0y;
+		double d21 = v2x * v1x + v2y * v1y;
+
+		double denom = d00 * d11 - d01 * d01;
+		if (Math.Abs(denom) < 1e-12)
+		{
+			u = v = w = 0;
+			return false;
+		}
+
+		v = (d11 * d20 - d01 * d21) / denom;
+		w = (d00 * d21 - d01 * d20) / denom;
+		u = 1 - v - w;
+		return u >= -1e-6 && v >= -1e-6 && w >= -1e-6;
+	}
+
+	private static LlaVertex EcefToLla(double x, double y, double z)
+	{
+		double a = Wgs84A;
+		double e2 = Wgs84E2;
+		double b = a * Math.Sqrt(1 - e2);
+		double ep2 = (a * a - b * b) / (b * b);
+		double p = Math.Sqrt((x * x) + (y * y));
+		double th = Math.Atan2(a * z, b * p);
+		double lon = Math.Atan2(y, x);
+		double lat = Math.Atan2(z + (ep2 * b * Math.Pow(Math.Sin(th), 3)), p - (e2 * a * Math.Pow(Math.Cos(th), 3)));
+		double sinLat = Math.Sin(lat);
+		double n = a / Math.Sqrt(1 - e2 * sinLat * sinLat);
+		double alt = (p / Math.Cos(lat)) - n;
+
+		return new LlaVertex(lat * 180 / Math.PI, lon * 180 / Math.PI, alt);
+	}
+
+	private readonly record struct TileInfo(int Index, string RelativePath, int BaseX, int BaseY, int X, int Y, double TileWidth);
+	private readonly record struct TriangleModel(int A, int B, int C, double MinLat, double MaxLat, double MinLon, double MaxLon);
+	private readonly record struct LlaVertex(double Lat, double Lon, double Alt);
+	private readonly record struct TileModel(LlaVertex?[] Vertices, List<TriangleModel> Triangles);
 }
