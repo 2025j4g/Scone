@@ -50,8 +50,22 @@ public static class BtgParser
 		uint creationTime = br.ReadUInt32();
 		ushort objectCount = br.ReadUInt16();
 
+		Console.WriteLine($"BTG Header: version={version}, magic=0x{magic:X4}, time={creationTime}, objects={objectCount}");
+
 		if (magic != 0x5347)
+		{
+			Console.WriteLine($"Invalid BTG file: expected magic 0x5347 but got 0x{magic:X4}");
 			throw new InvalidDataException("Invalid BTG file");
+		}
+
+		if (objectCount > 10000)
+		{
+			Console.WriteLine($"Warning: Suspicious object count {objectCount}. File may be corrupted.");
+			return new BtgParseResult()
+			{
+				Mesh = new DMesh3()
+			};
+		}
 
 		DMesh3 mesh = new();
 
@@ -63,37 +77,106 @@ public static class BtgParser
 		// ----- OBJECT LOOP -----
 		for (int i = 0; i < objectCount; i++)
 		{
+			// Check if we have enough bytes to read object header
+			if (br.BaseStream.Position + 5 > br.BaseStream.Length)
+			{
+				Console.WriteLine($"Warning: Not enough data for object {i} header. Stopping parse.");
+				break;
+			}
+
 			byte objType = br.ReadByte();
 			ushort propCount = br.ReadUInt16();
 			ushort elemCount = br.ReadUInt16();
+
+			// Sanity check: if propCount or elemCount are absurdly high, the file is likely corrupted
+			if (propCount > 1000 || elemCount > 100000)
+			{
+				Console.WriteLine($"Warning: Object {i} has suspicious counts (props={propCount}, elems={elemCount}). Skipping.");
+				break;
+			}
 
 			// ----- PROPERTIES (ignored for bounding sphere) -----
 			byte indexTypeFlags = 0;
 
 			for (int p = 0; p < propCount; p++)
 			{
-				byte propType = br.ReadByte(); // run this with LTFM to get an error
+				// Check if we can read property header
+				if (br.BaseStream.Position + 5 > br.BaseStream.Length)
+				{
+					Console.WriteLine($"Warning: Not enough data for property {p} header. Stopping.");
+					break;
+				}
+
+				byte propType = br.ReadByte();
 				uint propSize = br.ReadUInt32();
 				long propStart = br.BaseStream.Position;
+				long propEnd = propStart + propSize;
+
+				// Sanity check: property size should be reasonable
+				if (propSize > br.BaseStream.Length || propSize > 100_000_000)
+				{
+					Console.WriteLine($"Warning: Property {p} type {propType} has invalid size {propSize}. File may be corrupted. Stopping parse.");
+					return result;
+				}
+
+				// Validate that we can actually read this property
+				if (propEnd > br.BaseStream.Length)
+				{
+					Console.WriteLine($"Warning: Property {p} type {propType} size {propSize} extends beyond stream (start={propStart}, end={propEnd}, length={br.BaseStream.Length}). Stopping parse.");
+					return result;
+				}
 
 				if (propType == 1 && propSize > 0) // Index Types
 				{
 					indexTypeFlags = br.ReadByte();
+					// Skip any remaining bytes in this property
+					long bytesRead = br.BaseStream.Position - propStart;
+					if (bytesRead < propSize)
+					{
+						br.BaseStream.Seek(propSize - bytesRead, SeekOrigin.Current);
+					}
 				}
 				else
 				{
-					br.ReadBytes((int)propSize);
+					// Skip the entire property
+					br.BaseStream.Seek(propSize, SeekOrigin.Current);
 				}
 
-				Console.WriteLine($"Skipping property type {propType} size {propSize} at {propStart}, length {br.BaseStream.Length}");
-				br.BaseStream.Position = propStart + propSize; // run this with EFHK or OKKK to get an error
+				// Ensure we're at the correct position
+				if (br.BaseStream.Position != propEnd)
+				{
+					Console.WriteLine($"Warning: Position mismatch after property {p}. Expected {propEnd}, got {br.BaseStream.Position}. Correcting.");
+					br.BaseStream.Position = propEnd;
+				}
 			}
 
 			// ----- ELEMENTS -----
 			for (int e = 0; e < elemCount; e++)
 			{
+				// Check if we can read element size
+				if (br.BaseStream.Position + 4 > br.BaseStream.Length)
+				{
+					Console.WriteLine($"Warning: Not enough data for element {e} size. Stopping.");
+					break;
+				}
+
 				uint elemSize = br.ReadUInt32();
 				long elemStart = br.BaseStream.Position;
+				long elemEnd = elemStart + elemSize;
+
+				// Sanity check: element size should be reasonable
+				if (elemSize > br.BaseStream.Length || elemSize > 100_000_000)
+				{
+					Console.WriteLine($"Warning: Element {e} has invalid size {elemSize}. File may be corrupted. Stopping parse.");
+					return result;
+				}
+
+				// Validate element bounds
+				if (elemEnd > br.BaseStream.Length)
+				{
+					Console.WriteLine($"Warning: Element {e} size {elemSize} extends beyond stream (start={elemStart}, end={elemEnd}, length={br.BaseStream.Length}). Stopping parse.");
+					return result;
+				}
 
 				switch (objType)
 				{
@@ -149,7 +232,17 @@ public static class BtgParser
 						break;
 				}
 
-				br.BaseStream.Position = elemStart + elemSize;
+				// Ensure we're at the correct position after element
+				if (br.BaseStream.Position > elemEnd)
+				{
+					Console.WriteLine($"Warning: Read past element boundary. Position={br.BaseStream.Position}, Expected={elemEnd}");
+				}
+				
+				// Always seek to the correct end position
+				if (br.BaseStream.Position != elemEnd && elemEnd <= br.BaseStream.Length)
+				{
+					br.BaseStream.Position = elemEnd;
+				}
 			}
 		}
 
