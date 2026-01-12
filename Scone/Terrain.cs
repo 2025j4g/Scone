@@ -380,6 +380,14 @@ public class Terrain
 		catch (AggregateException e)
 		{
 			Console.WriteLine($"Error fetching BTG data from {$"{urlTopLevel}/{index}.stg"}: {e.Message}");
+
+			tileCache[index] = new TileKey()
+			{
+				Index = index,
+				Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+				Locked = false,
+				Models = []
+			};
 		}
 		Console.WriteLine($"Elevation: {elevation} meters");
 		return elevation;
