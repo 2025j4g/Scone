@@ -654,7 +654,7 @@ public class SceneryConverter : INotifyPropertyChanged
 							{
 								string activeName = hasXml ? $"{name}{(libObj.scale != 1 ? $"_{libObj.scale}" : string.Empty)}.xml" : $"{name}.gltf";
 								double headingStg = ((libObj.heading > 180 ? 540 : 180) - libObj.heading + 90) % 360;
-								string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude} {libObj.latitude} {libObj.altitude} {headingStg:F2} {libObj.pitch:F2} {libObj.bank:F2}";
+								string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude} {libObj.latitude} {libObj.altitude} {headingStg:F2} {libObj.pitch:F2} {libObj.bank + 90f:F2}";
 								if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(libObj.latitude, libObj.longitude)))
 								{
 									finalPlacementsByTile[Terrain.GetTileIndex(libObj.latitude, libObj.longitude)] = [];
@@ -698,8 +698,8 @@ public class SceneryConverter : INotifyPropertyChanged
 		lightElem.AppendChild(doc.CreateElement("type"))!.InnerText = light.cutoffAngle <= 90 ? "spot" : "point";
 		XmlElement? positionElem = lightElem.AppendChild(doc.CreateElement("position")) as XmlElement;
 		positionElem!.AppendChild(doc.CreateElement("x-m"))!.InnerText = light.position.X.ToString();
-		positionElem.AppendChild(doc.CreateElement("y-m"))!.InnerText = light.position.Y.ToString();
-		positionElem.AppendChild(doc.CreateElement("z-m"))!.InnerText = light.position.Z.ToString();
+		positionElem.AppendChild(doc.CreateElement("y-m"))!.InnerText = (-light.position.Z).ToString();
+		positionElem.AppendChild(doc.CreateElement("z-m"))!.InnerText = light.position.Y.ToString();
 
 		if (light.cutoffAngle <= 90)
 		{
