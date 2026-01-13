@@ -128,7 +128,7 @@ public class SceneryConverter : INotifyPropertyChanged
 					}
 					ushort size = br.ReadUInt16();
 					uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
-					int altitude = br.ReadInt32();
+					double altitude = br.ReadInt32() / 1000.0;
 					ushort flagsValue = br.ReadUInt16();
 					List<Flags> flagsList = [];
 					for (int j = 0; j < 7; j++)
