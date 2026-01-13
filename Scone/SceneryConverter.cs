@@ -319,7 +319,7 @@ public class SceneryConverter : INotifyPropertyChanged
 								{
 									XmlDocument xmlDoc = new();
 									xmlDoc.LoadXml(gxmlContent);
-									name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value.Replace(".gltf", "") ?? "Unnamed_Model";
+									name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value.Replace(".gltf", "").Replace(" ", "_") ?? "Unnamed_Model";
 									XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
 									foreach (XmlNode lodNode in lodNodes)
 									{
@@ -586,6 +586,7 @@ public class SceneryConverter : INotifyPropertyChanged
 									ImageWriteCallback = (context, assetName, image) =>
 									{
 										string fileName = string.IsNullOrEmpty(image.SourcePath) ? assetName : image.SourcePath.Split(Path.DirectorySeparatorChar).Last();
+										fileName = fileName.Replace(" ", "_");
 										string finalPath = Path.Combine(path, fileName);
 
 										// Only write the image once
@@ -654,7 +655,8 @@ public class SceneryConverter : INotifyPropertyChanged
 							{
 								string activeName = hasXml ? $"{name}{(libObj.scale != 1 ? $"_{libObj.scale}" : string.Empty)}.xml" : $"{name}.gltf";
 								double headingStg = ((libObj.heading > 180 ? 540 : 180) - libObj.heading + 90) % 360;
-								string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude} {libObj.latitude} {libObj.altitude} {headingStg:F2} {libObj.pitch:F2} {libObj.bank + 90f:F2}";
+								double bankStg = (libObj.bank + 90) % 360;
+								string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude} {libObj.latitude} {libObj.altitude} {headingStg:F2} {libObj.pitch:F2} {bankStg:F2}";
 								if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(libObj.latitude, libObj.longitude)))
 								{
 									finalPlacementsByTile[Terrain.GetTileIndex(libObj.latitude, libObj.longitude)] = [];
