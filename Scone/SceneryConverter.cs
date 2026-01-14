@@ -578,8 +578,11 @@ public class SceneryConverter : INotifyPropertyChanged
 							{
 								_ = Directory.CreateDirectory(path);
 							}
-							foreach (ModelObject modelObj in modelObjects)
+							for (int i = 0; i < modelObjects.Count; i++)
 							{
+								ModelObject modelObj = modelObjects[i];
+								modelObj.name = modelObjects.Count > 1 ? modelObj.name : name;
+								modelObjects[i] = modelObj;
 								string outGlbPath = Path.Combine(path, $"{modelObj.name}.gltf");
 								modelObj.model.ToGltf2().SaveGLTF(outGlbPath, new WriteSettings
 								{
