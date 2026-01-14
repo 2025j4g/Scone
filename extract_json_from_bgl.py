@@ -103,7 +103,7 @@ def process_bgl_file(bgl_path, output_dir):
 
         record_type = read_uint32(data, offset)
         start_subsection = read_uint32(data, offset + 0x0C)
-        record_size = read_uint32(data, offset + 0x10)
+        read_uint32(data, offset + 0x10)
 
         if record_type == 0x002B:  # ModelData
             model_data_offsets.append(start_subsection)
