@@ -351,7 +351,7 @@ public class SceneryConverter : INotifyPropertyChanged
 							}
 							else if (chunk == "GLBD")
 							{
-								Console.WriteLine($"Processing GLBD chunk for model {name} ({guid})");
+								Console.WriteLine($"Processing GLBD chunk for model {name} ({guid}) in {file}");
 								int size = BitConverter.ToInt32(mdlBytes, i + 4);
 								int glbIndex = 0; // for unique filenames per GLB in this chunk
 
@@ -464,7 +464,8 @@ public class SceneryConverter : INotifyPropertyChanged
 										}
 										foreach (JObject mesh in meshes.Cast<JObject>())
 										{
-											MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> meshBuilder = GlbBuilder.BuildMesh(inputPath, file, mesh, accessors, bufferViews, materials, textures, images, glbBinBytes);
+											MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty>? meshBuilder = GlbBuilder.BuildMesh(inputPath, file, mesh, accessors, bufferViews, materials, textures, images, glbBinBytes);
+											if (meshBuilder == null) continue;
 											Vector3 translationFinal = Vector3.Zero;
 											Quaternion rotationFinal = Quaternion.Identity;
 											Vector3 scaleFinal = Vector3.One;
@@ -506,10 +507,10 @@ public class SceneryConverter : INotifyPropertyChanged
 											scene.AddRigidMesh(meshBuilder, transform);
 										}
 
-										accessors = JObject.Parse(scene.ToGltf2().GetJsonPreview())["accessors"]!.Value<JArray>()!;
+										accessors = JObject.Parse(scene.ToGltf2().GetJsonPreview())["accessors"]?.Value<JArray>()!;
 										Vector3 min = new(float.MaxValue);
 										Vector3 max = new(float.MinValue);
-										foreach (JObject accessor in accessors!.Cast<JObject>())
+										foreach (JObject accessor in accessors?.Cast<JObject>() ?? Enumerable.Empty<JObject>())
 										{
 											if (accessor["min"] != null && accessor["max"] != null && accessor["name"]!.Value<string>() == "POSITION")
 											{

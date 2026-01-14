@@ -69,13 +69,16 @@ public class GlbBuilder
 		return node;
 	}
 
-	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(string srcPath, string srcBgl, JObject meshJson, JArray accJson, JArray bvJson, JArray matsJson, JArray texJson, JArray imgJson, byte[] glbBinBytes)
+	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty>? BuildMesh(string srcPath, string srcBgl, JObject meshJson, JArray accJson, JArray bvJson, JArray matsJson, JArray texJson, JArray imgJson, byte[] glbBinBytes)
 	{
 
 		MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> mesh = new(meshJson["name"]?.Value<string>() ?? "UnnamedMesh");
 		foreach (JObject primJson in ((JArray)meshJson["primitives"]!).Cast<JObject>())
 		{
 			JObject matJson = (JObject)matsJson[primJson["material"]!.Value<int>()];
+			if (matJson["extensions"]?["ASOBO_material_invisible"] != null) {
+				return null;
+			}
 			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(BuildMaterial(matJson, texJson, imgJson, srcPath, srcBgl));
 			JObject attributes = (JObject)primJson["attributes"]!;
 			PrimData data = new();
