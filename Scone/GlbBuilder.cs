@@ -53,17 +53,17 @@ public class GlbBuilder
 		if (nodeJson["translation"] != null)
 		{
 			JArray translation = (JArray)nodeJson["translation"]!;
-			node.WithLocalTranslation(new Vector3(translation[0].Value<float>(), translation[1].Value<float>(), translation[2].Value<float>()));
+            _ = node.WithLocalTranslation(new Vector3(translation[0].Value<float>(), translation[1].Value<float>(), translation[2].Value<float>()));
 		}
 		if (nodeJson["rotation"] != null)
 		{
 			JArray rotation = (JArray)nodeJson["rotation"]!;
-			node.WithLocalRotation(new Quaternion(rotation[0].Value<float>(), rotation[1].Value<float>(), rotation[2].Value<float>(), rotation[3].Value<float>()));
+            _ = node.WithLocalRotation(new Quaternion(rotation[0].Value<float>(), rotation[1].Value<float>(), rotation[2].Value<float>(), rotation[3].Value<float>()));
 		}
 		if (nodeJson["scale"] != null)
 		{
 			JArray scale = (JArray)nodeJson["scale"]!;
-			node.WithLocalScale(new Vector3(scale[0].Value<float>(), scale[1].Value<float>(), scale[2].Value<float>()));
+            _ = node.WithLocalScale(new Vector3(scale[0].Value<float>(), scale[1].Value<float>(), scale[2].Value<float>()));
 		}
 
 		return node;
@@ -171,7 +171,7 @@ public class GlbBuilder
 				VertexBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> v2 = new(geo2, mat2);
 				VertexBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> v3 = new(geo3, mat3);
 
-				prim.AddTriangle(v1, v3, v2); // This has got to be inverted for normals
+                _ = prim.AddTriangle(v1, v3, v2); // This has got to be inverted for normals
 			}
 		}
 		return mesh;
@@ -186,10 +186,10 @@ public class GlbBuilder
 			if (pbr["baseColorFactor"] != null)
 			{
 				JArray colorFactor = (JArray)pbr["baseColorFactor"]!;
-				material.WithBaseColor(new Vector4(Math.Clamp(colorFactor[0].Value<float>(), 0f, 1f),
-												   Math.Clamp(colorFactor[1].Value<float>(), 0f, 1f),
-												   Math.Clamp(colorFactor[2].Value<float>(), 0f, 1f),
-												   Math.Clamp(colorFactor[3].Value<float>(), 0f, 1f)));
+                _ = material.WithBaseColor(new Vector4(Math.Clamp(colorFactor[0].Value<float>(), 0f, 1f),
+                                                   Math.Clamp(colorFactor[1].Value<float>(), 0f, 1f),
+                                                   Math.Clamp(colorFactor[2].Value<float>(), 0f, 1f),
+                                                   Math.Clamp(colorFactor[3].Value<float>(), 0f, 1f)));
 			}
 			if (pbr["baseColorTexture"] != null)
 			{
@@ -220,10 +220,10 @@ public class GlbBuilder
 
 					if (!string.IsNullOrEmpty(mostLikelyMatch))
 					{
-						material.UseChannel(KnownChannel.BaseColor)
-								.UseTexture()
-								.WithPrimaryImage(mostLikelyMatch)
-								.WithCoordinateSet(texCoordSet);
+                        _ = material.UseChannel(KnownChannel.BaseColor)
+                                .UseTexture()
+                                .WithPrimaryImage(mostLikelyMatch)
+                                .WithCoordinateSet(texCoordSet);
 					}
 				}
 			}
@@ -232,7 +232,7 @@ public class GlbBuilder
 				// Use sane defaults per glTF PBR: metallic=0 (non-metal), roughness=1 (fully rough)
 				float metallic = Math.Clamp(pbr["metallicFactor"]?.Value<float>() ?? 0f, 0f, 1f);
 				float roughness = Math.Clamp(pbr["roughnessFactor"]?.Value<float>() ?? 1f, 0f, 1f);
-				material.WithMetallicRoughness(metallic, roughness);
+                _ = material.WithMetallicRoughness(metallic, roughness);
 			}
 			if (pbr["metallicRoughnessTexture"] != null)
 			{
@@ -264,10 +264,10 @@ public class GlbBuilder
 
 					if (!string.IsNullOrEmpty(mostLikelyMatch))
 					{
-						material.UseChannel(KnownChannel.MetallicRoughness)
-							.UseTexture()
-							.WithPrimaryImage(mostLikelyMatch)
-							.WithCoordinateSet(texCoordSet);
+                        _ = material.UseChannel(KnownChannel.MetallicRoughness)
+                            .UseTexture()
+                            .WithPrimaryImage(mostLikelyMatch)
+                            .WithCoordinateSet(texCoordSet);
 					}
 				}
 			}
@@ -301,10 +301,10 @@ public class GlbBuilder
 
 				if (!string.IsNullOrEmpty(mostLikelyMatch))
 				{
-					material.UseChannel(KnownChannel.Normal)
-						.UseTexture()
-						.WithPrimaryImage(mostLikelyMatch)
-						.WithCoordinateSet(texCoordSet);
+                    _ = material.UseChannel(KnownChannel.Normal)
+                        .UseTexture()
+                        .WithPrimaryImage(mostLikelyMatch)
+                        .WithCoordinateSet(texCoordSet);
 				}
 			}
 		}
@@ -337,10 +337,10 @@ public class GlbBuilder
 
 				if (!string.IsNullOrEmpty(mostLikelyMatch))
 				{
-					material.UseChannel(KnownChannel.Occlusion)
-						.UseTexture()
-						.WithPrimaryImage(mostLikelyMatch)
-						.WithCoordinateSet(texCoordSet);
+                    _ = material.UseChannel(KnownChannel.Occlusion)
+                        .UseTexture()
+                        .WithPrimaryImage(mostLikelyMatch)
+                        .WithCoordinateSet(texCoordSet);
 				}
 			}
 		}
@@ -373,35 +373,35 @@ public class GlbBuilder
 
 				if (!string.IsNullOrEmpty(mostLikelyMatch))
 				{
-					material.UseChannel(KnownChannel.Emissive)
-						.UseTexture()
-						.WithPrimaryImage(mostLikelyMatch)
-						.WithCoordinateSet(texCoordSet);
+                    _ = material.UseChannel(KnownChannel.Emissive)
+                        .UseTexture()
+                        .WithPrimaryImage(mostLikelyMatch)
+                        .WithCoordinateSet(texCoordSet);
 				}
 			}
 		}
 		if (matJson["emissiveFactor"] != null)
 		{
 			JArray emissiveFactor = (JArray)matJson["emissiveFactor"]!;
-			material.WithEmissive(new Vector3(Math.Clamp(emissiveFactor[0].Value<float>(), 0f, 1f),
-											  Math.Clamp(emissiveFactor[1].Value<float>(), 0f, 1f),
-											  Math.Clamp(emissiveFactor[2].Value<float>(), 0f, 1f)));
+            _ = material.WithEmissive(new Vector3(Math.Clamp(emissiveFactor[0].Value<float>(), 0f, 1f),
+                                              Math.Clamp(emissiveFactor[1].Value<float>(), 0f, 1f),
+                                              Math.Clamp(emissiveFactor[2].Value<float>(), 0f, 1f)));
 		}
 		if (matJson["alphaMode"] != null)
 		{
 			string alphaMode = matJson["alphaMode"]!.Value<string>()!;
 			if (alphaMode == "BLEND")
 			{
-				material.WithAlpha(AlphaMode.BLEND);
+                _ = material.WithAlpha(AlphaMode.BLEND);
 			}
 			else if (alphaMode == "MASK")
 			{
 				float alphaCutoff = Math.Clamp(matJson["alphaCutoff"]?.Value<float>() ?? 0.5f, 0f, 1f);
-				material.WithAlpha(AlphaMode.MASK, alphaCutoff);
+                _ = material.WithAlpha(AlphaMode.MASK, alphaCutoff);
 			}
 			else
 			{
-				material.WithAlpha(AlphaMode.OPAQUE);
+                _ = material.WithAlpha(AlphaMode.OPAQUE);
 			}
 		}
 		material.DoubleSided = matJson["doubleSided"]?.Value<bool>() ?? false;

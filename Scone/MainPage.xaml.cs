@@ -18,7 +18,7 @@ public sealed partial class MainPage : Page
 	{
 		// Show the overlay dialog
 		AddTaskOverlay.Visibility = Visibility.Visible;
-		FolderPathInput.Focus(FocusState.Programmatic);
+        _ = FolderPathInput.Focus(FocusState.Programmatic);
 	}
 
 	private async void BrowseButton_Click(object sender, RoutedEventArgs e)
@@ -113,7 +113,7 @@ public sealed partial class MainPage : Page
 			XamlRoot = XamlRoot
 		};
 
-		await dialog.ShowAsync();
+        _ = await dialog.ShowAsync();
 	}
 
 	private static async void StartDownloadTask(DownloadTask task)

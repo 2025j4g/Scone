@@ -14,11 +14,11 @@ public partial class App : Application
 	{
 		if (!Directory.Exists(TempPath))
 		{
-			Directory.CreateDirectory(TempPath);
+            _ = Directory.CreateDirectory(TempPath);
 		}
 		if (!Directory.Exists(StorePath))
 		{
-			Directory.CreateDirectory(StorePath);
+            _ = Directory.CreateDirectory(StorePath);
 		}
 		/* if (File.Exists(ConfigPath))
 		{

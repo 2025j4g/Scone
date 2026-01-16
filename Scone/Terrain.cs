@@ -133,13 +133,13 @@ public static class BtgParser
 					long bytesRead = br.BaseStream.Position - propStart;
 					if (bytesRead < propSize)
 					{
-						br.BaseStream.Seek(propSize - bytesRead, SeekOrigin.Current);
+                        _ = br.BaseStream.Seek(propSize - bytesRead, SeekOrigin.Current);
 					}
 				}
 				else
 				{
-					// Skip the entire property
-					br.BaseStream.Seek(propSize, SeekOrigin.Current);
+                    // Skip the entire property
+                    _ = br.BaseStream.Seek(propSize, SeekOrigin.Current);
 				}
 
 				// Ensure we're at the correct position
@@ -207,7 +207,7 @@ public static class BtgParser
 								float y = br.ReadSingle();
 								float z = br.ReadSingle();
 
-								mesh.AppendVertex(new Vector3d(x, y, z));
+                                _ = mesh.AppendVertex(new Vector3d(x, y, z));
 							}
 							break;
 						}
@@ -228,7 +228,7 @@ public static class BtgParser
 						break;
 
 					default:
-						br.BaseStream.Seek(elemSize, SeekOrigin.Current);
+                        _ = br.BaseStream.Seek(elemSize, SeekOrigin.Current);
 						break;
 				}
 
@@ -278,7 +278,7 @@ public static class BtgParser
 			verts.Add(ReadVertexIndex(br, tupleSize));
 
 		for (int i = 0; i + 2 < verts.Count; i += 3)
-			mesh.AppendTriangle(verts[i], verts[i + 2], verts[i + 1]);
+            _ = mesh.AppendTriangle(verts[i], verts[i + 2], verts[i + 1]);
 	}
 
 	private static void ReadTriangleStrip(BinaryReader br, DMesh3 mesh, uint elemSize, byte flags)
@@ -293,9 +293,9 @@ public static class BtgParser
 		for (int i = 0; i + 2 < v.Count; i++)
 		{
 			if ((i & 1) == 0)
-				mesh.AppendTriangle(v[i], v[i + 1], v[i + 2]);
+                _ = mesh.AppendTriangle(v[i], v[i + 1], v[i + 2]);
 			else
-				mesh.AppendTriangle(v[i + 1], v[i], v[i + 2]);
+                _ = mesh.AppendTriangle(v[i + 1], v[i], v[i + 2]);
 		}
 	}
 
@@ -309,7 +309,7 @@ public static class BtgParser
 			v.Add(ReadVertexIndex(br, tupleSize));
 
 		for (int i = 1; i + 1 < v.Count; i++)
-			mesh.AppendTriangle(v[0], v[i], v[i + 1]);
+            _ = mesh.AppendTriangle(v[0], v[i], v[i + 1]);
 	}
 
 	// Only read vertex index, skip rest of tuple
@@ -317,7 +317,7 @@ public static class BtgParser
 	{
 		ushort v = br.ReadUInt16();
 		int skip = tupleSize - 2;
-		if (skip > 0) br.ReadBytes(skip);
+		if (skip > 0) _ = br.ReadBytes(skip);
 		return v;
 	}
 }
@@ -354,7 +354,7 @@ public class Terrain
 					using GZipStream gzipStream = new(compressedStream, CompressionMode.Decompress);
 					using MemoryStream decompressedStream = new();
 					gzipStream.CopyTo(decompressedStream);
-					decompressedStream.ToArray();
+                    _ = decompressedStream.ToArray();
 					byte[] btgData = decompressedStream.ToArray();
 					meshes.Add(BtgParser.Parse(btgData));
 				}
