@@ -373,8 +373,7 @@ public class SceneryConverter : INotifyPropertyChanged
 									{
 										name = outName.Replace(" ", "_"),
 										minSize = glbIndex < lods.Count ? lods[glbIndex].minSize : 0,
-										model = sceneLocal,
-										radius = (max - min).Length() / 2.0f,
+										model = sceneLocal
 									});
 									foreach (LibraryObject libObj in libraryObjectsForModel)
 									{
