@@ -1,21 +1,117 @@
 using Windows.Storage.Pickers;
 using WinRT.Interop;
+using System.Text.Json;
 
 namespace Scone;
 
 public sealed partial class MainPage : Page
 {
 	private ObservableCollection<DownloadTask> tasks = [];
+	private const string ConfigFileName = "config.json";
 
 	public MainPage()
 	{
 		InitializeComponent();
 		TasksList.ItemsSource = tasks;
+		LoadConfig();
 		UpdateEmptyState();
+	}
+
+	private void SettingsButton_Click(object sender, RoutedEventArgs e)
+	{
+		OutputDirectoryInput.Text = App.AppConfig.OutputDirectory ?? "";
+		SettingsOverlay.Visibility = Visibility.Visible;
+		_ = OutputDirectoryInput.Focus(FocusState.Programmatic);
+	}
+
+	private async void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
+	{
+		FolderPicker folderPicker = new()
+		{
+			SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+		};
+		folderPicker.FileTypeFilter.Add("*");
+
+		nint hwnd = WindowNative.GetWindowHandle(App.MainWindow);
+		InitializeWithWindow.Initialize(folderPicker, hwnd);
+
+		StorageFolder folder = await folderPicker.PickSingleFolderAsync();
+		if (folder != null)
+		{
+			OutputDirectoryInput.Text = folder.Path;
+		}
+	}
+
+	private void CancelSettingsButton_Click(object sender, RoutedEventArgs e)
+	{
+		SettingsOverlay.Visibility = Visibility.Collapsed;
+	}
+
+	private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
+	{
+		string outputDir = OutputDirectoryInput.Text?.Trim() ?? "";
+
+		if (string.IsNullOrWhiteSpace(outputDir))
+		{
+			ShowErrorDialog("Please select an output directory.");
+			return;
+		}
+
+		if (!Directory.Exists(outputDir))
+		{
+			try
+			{
+				Directory.CreateDirectory(outputDir);
+			}
+			catch (Exception ex)
+			{
+				ShowErrorDialog($"Could not create directory: {ex.Message}");
+				return;
+			}
+		}
+
+		App.AppConfig.OutputDirectory = outputDir;
+		SaveConfig();
+		SettingsOverlay.Visibility = Visibility.Collapsed;
+	}
+
+	private void LoadConfig()
+	{
+		try
+		{
+			string configPath = Path.Combine(ApplicationData.Current.LocalFolder.Path, ConfigFileName);
+			if (File.Exists(configPath))
+			{
+				string json = File.ReadAllText(configPath);
+				Config? config = JsonSerializer.Deserialize<Config>(json);
+				if (config.HasValue)
+				{
+					App.AppConfig = config.Value;
+				}
+			}
+		}
+		catch { /* Ignore errors loading config */ }
+	}
+
+	private void SaveConfig()
+	{
+		try
+		{
+			string configPath = Path.Combine(ApplicationData.Current.LocalFolder.Path, ConfigFileName);
+			string json = JsonSerializer.Serialize(App.AppConfig, new JsonSerializerOptions { WriteIndented = true });
+			File.WriteAllText(configPath, json);
+		}
+		catch { /* Ignore errors saving config */ }
 	}
 
 	private void AddTaskButton_Click(object sender, RoutedEventArgs e)
 	{
+		if (string.IsNullOrWhiteSpace(App.AppConfig.OutputDirectory))
+		{
+			ShowErrorDialog("Please configure an output directory in Settings first.");
+			return;
+		}
+
 		// Show the overlay dialog
 		AddTaskOverlay.Visibility = Visibility.Visible;
         _ = FolderPathInput.Focus(FocusState.Programmatic);
@@ -81,10 +177,11 @@ public sealed partial class MainPage : Page
 		DownloadTask newTask = new()
 		{
 			TaskName = taskName,
-			TaskPath = folderPath,
-			Progress = 0,
-			ProgressText = "0%"
+			TaskPath = folderPath
 		};
+
+		newTask.Progress = 0;
+		newTask.ProgressText = "0%";
 
 		tasks.Add(newTask);
 		UpdateEmptyState();
@@ -116,14 +213,43 @@ public sealed partial class MainPage : Page
         _ = await dialog.ShowAsync();
 	}
 
-	private static async void StartDownloadTask(DownloadTask task)
+	private async void StartDownloadTask(DownloadTask task)
 	{
-		// Placeholder for actual download logic
-		// This simulates progress for demonstration
-		await Task.Run(async () =>
+		task.IsRunning = true;
+		task.Status = "Starting conversion...";
+
+		try
 		{
-			task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!);
-		});
+			await Task.Run(() =>
+			{
+				task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!);
+			});
+
+			// Conversion complete - remove task from UI
+			DispatcherQueue.TryEnqueue(() =>
+			{
+				task.IsRunning = false;
+				task.Status = "Completed!";
+
+				// Remove after a brief delay so user can see completion
+				_ = Task.Delay(2000).ContinueWith(_ =>
+				{
+					DispatcherQueue.TryEnqueue(() =>
+					{
+						tasks.Remove(task);
+						UpdateEmptyState();
+					});
+				});
+			});
+		}
+		catch (Exception ex)
+		{
+			DispatcherQueue.TryEnqueue(() =>
+			{
+				task.IsRunning = false;
+				task.Status = $"Error: {ex.Message}";
+			});
+		}
 	}
 }
 
@@ -133,9 +259,21 @@ public class DownloadTask : INotifyPropertyChanged
 	private string _taskName = string.Empty;
 	private string _taskPath = string.Empty;
 	public readonly SceneryConverter _converter = new();
-	private string _taskStatus = "";
-	private double _progress;
+	private bool _isRunning = false;
+	private double _progress = 0;
 	private string _progressText = "0%";
+
+	public DownloadTask()
+	{
+		// Subscribe to converter status changes
+		_converter.PropertyChanged += (s, e) =>
+		{
+			if (e.PropertyName == nameof(SceneryConverter.Status))
+			{
+				OnPropertyChanged(nameof(Status));
+			}
+		};
+	}
 
 	public string TaskName
 	{
@@ -154,6 +292,32 @@ public class DownloadTask : INotifyPropertyChanged
 		{
 			_taskPath = value;
 			OnPropertyChanged();
+		}
+	}
+
+	public bool IsRunning
+	{
+		get => _isRunning;
+		set
+		{
+			_isRunning = value;
+			OnPropertyChanged();
+		}
+	}
+
+	public string Status
+	{
+		get => _converter.Status;
+		set
+		{
+			// Allow manual override of status (e.g., for errors)
+			if (_converter.Status != value)
+			{
+				// Use reflection to set the private backing field
+				var @field = typeof(SceneryConverter).GetField("_status", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+				@field?.SetValue(_converter, value);
+				OnPropertyChanged();
+			}
 		}
 	}
 

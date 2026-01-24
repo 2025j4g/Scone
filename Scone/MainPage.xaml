@@ -41,6 +41,13 @@
 					   FontSize="24"
 					   FontWeight="SemiBold"
 					   VerticalAlignment="Center"/>
+
+			<!-- Settings Button -->
+			<Button Grid.Column="3"
+					Content="Settings"
+					Click="SettingsButton_Click"
+					HorizontalAlignment="Right"
+					VerticalAlignment="Center"/>
 		</Grid>
 
 		<!-- Main Content Area -->
@@ -87,25 +94,26 @@
 												   Margin="0,0,0,8"
 												   TextTrimming="CharacterEllipsis"/>
 
-										<!-- Progress Bar and Status -->
+										<!-- Status with Spinner -->
 										<Grid Grid.Row="2">
 											<Grid.ColumnDefinitions>
-												<ColumnDefinition Width="*"/>
 												<ColumnDefinition Width="Auto"/>
+												<ColumnDefinition Width="*"/>
 											</Grid.ColumnDefinitions>
 
-											<ProgressBar Grid.Column="0"
-														 Value="{Binding Progress}"
-														 Maximum="100"
-														 Height="8"
-														 VerticalAlignment="Center"
-														 Margin="0,0,12,0"/>
+											<ProgressRing Grid.Column="0"
+														  IsActive="{Binding IsRunning}"
+														  Width="20"
+														  Height="20"
+														  Margin="0,0,12,0"
+														  VerticalAlignment="Center"/>
 
 											<TextBlock Grid.Column="1"
-													   Text="{Binding ProgressText}"
+													   Text="{Binding Status}"
 													   FontSize="12"
 													   Opacity="0.7"
-													   VerticalAlignment="Center"/>
+													   VerticalAlignment="Center"
+													   TextWrapping="Wrap"/>
 										</Grid>
 									</Grid>
 								</Border>
@@ -217,6 +225,73 @@
 						<Button Grid.Column="1"
 								Content="Add Task"
 								Click="ConfirmTaskButton_Click"
+								Style="{StaticResource AccentButtonStyle}"
+								HorizontalAlignment="Stretch"
+								Margin="8,0,0,0"/>
+					</Grid>
+				</StackPanel>
+			</Border>
+		</Grid>
+
+		<!-- Settings Dialog Overlay -->
+		<Grid x:Name="SettingsOverlay"
+			  Grid.RowSpan="2"
+			  Background="#AA000000"
+			  Visibility="Collapsed">
+			<Border Background="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}"
+					BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+					BorderThickness="1"
+					CornerRadius="12"
+					Padding="24"
+					MaxWidth="500"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Center"
+					Shadow="{ThemeResource ThemeShadow}">
+				<StackPanel Spacing="16">
+					<!-- Dialog Title -->
+					<TextBlock Text="Settings"
+							   FontSize="20"
+							   FontWeight="SemiBold"/>
+
+					<!-- Output Directory Input -->
+					<StackPanel Spacing="8">
+						<TextBlock Text="Output Directory"
+								   FontSize="14"
+								   FontWeight="SemiBold"/>
+						<Grid>
+							<Grid.ColumnDefinitions>
+								<ColumnDefinition Width="*"/>
+								<ColumnDefinition Width="Auto"/>
+							</Grid.ColumnDefinitions>
+
+							<TextBox x:Name="OutputDirectoryInput"
+									 Grid.Column="0"
+									 PlaceholderText="Select output folder..."
+									 Margin="0,0,8,0"/>
+
+							<Button Grid.Column="1"
+									Content="Browse"
+									Click="BrowseOutputButton_Click"
+									MinWidth="80"/>
+						</Grid>
+					</StackPanel>
+
+					<!-- Action Buttons -->
+					<Grid Margin="0,8,0,0">
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="*"/>
+						</Grid.ColumnDefinitions>
+
+						<Button Grid.Column="0"
+								Content="Cancel"
+								Click="CancelSettingsButton_Click"
+								HorizontalAlignment="Stretch"
+								Margin="0,0,8,0"/>
+
+						<Button Grid.Column="1"
+								Content="Save"
+								Click="SaveSettingsButton_Click"
 								Style="{StaticResource AccentButtonStyle}"
 								HorizontalAlignment="Stretch"
 								Margin="8,0,0,0"/>

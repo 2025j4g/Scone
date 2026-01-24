@@ -11,29 +11,7 @@ using SharpGLTF.Schema2;
 namespace Scone;
 
 public class SceneryConverter : INotifyPropertyChanged
-{
-	private int _bytesTotal = 0;
-	public int BytesTotal
-	{
-		get => _bytesTotal;
-		private set
-		{
-			_bytesTotal = value;
-			OnPropertyChanged();
-		}
-	}
-	
-	private int _bytesProcessed = 0;
-	public int BytesProcessed
-	{
-		get => _bytesProcessed;
-		private set
-		{
-			_bytesProcessed = value;
-			OnPropertyChanged();
-		}
-	}
-	
+{	
 	private string _status = "Idle";
 	public string Status
 	{
@@ -165,8 +143,9 @@ public class SceneryConverter : INotifyPropertyChanged
 					{
 						libraryObjects[guid] = [];
 					}
-					Status = Status = $"Looking for placements in {Path.GetFileName(file)}... found {totalLibraryObjects}";
 					libraryObjects[guid].Add(libObj);
+					totalLibraryObjects++;
+					Status = $"Looking for placements in {Path.GetFileName(file)}... found {totalLibraryObjects}";
 					Console.WriteLine($"{guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 					bytesRead += size;
 				}
@@ -239,7 +218,6 @@ public class SceneryConverter : INotifyPropertyChanged
 				{
 					_ = br.BaseStream.Seek(subOffset + (24 * objectsRead), SeekOrigin.Begin);
 					byte[] guidBytes = br.ReadBytes(16);
-					BytesProcessed += 16;
 					Guid guid = new(guidBytes);
 					uint startModelDataOffset = br.ReadUInt32();
 					uint modelDataSize = br.ReadUInt32();
@@ -271,7 +249,9 @@ public class SceneryConverter : INotifyPropertyChanged
 					objectsRead++;
 				}
 			}
-			Console.WriteLine($"Found {modelReferencesByTile.Values.Sum(l => l.Count)} models in {Path.GetFileName(file)}");
+			int totalModelCount = modelReferencesByTile.Values.Sum(l => l.Count);
+			int modelsProcessed = 0;
+			Console.WriteLine($"Found {totalModelCount} models in {Path.GetFileName(file)}");
 
 			foreach (var kvp in modelReferencesByTile)
 			{
@@ -285,6 +265,7 @@ public class SceneryConverter : INotifyPropertyChanged
 				double altOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.altitude) / libraryObjectsForTile.Count : 0.0;
 				foreach (ModelReference modelRef in modelRefs)
 				{
+					modelsProcessed++;
 					List<LibraryObject> libraryObjectsForModel = libraryObjects.TryGetValue(modelRef.guid, out List<LibraryObject>? value) ? value : [];
 					BinaryReader brModel = new(new FileStream(modelRef.file, FileMode.Open, FileAccess.Read));
 					_ = brModel.BaseStream.Seek(modelRef.offset, SeekOrigin.Begin);
@@ -344,6 +325,7 @@ public class SceneryConverter : INotifyPropertyChanged
 						else if (chunk == "GLBD")
 						{
 							Console.WriteLine($"Processing GLBD chunk for model {name} ({modelRef.guid:X}) in {file}");
+							Status = $"Processing model {name} ({modelsProcessed} of {totalModelCount})...";
 							int size = BitConverter.ToInt32(mdlBytes, i + 4);
 							int glbIndex = 0; // for unique filenames per GLB in this chunk
 
