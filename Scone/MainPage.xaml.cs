@@ -245,6 +245,8 @@ public sealed partial class MainPage : Page
 		}
 		catch (Exception ex)
 		{
+			Console.WriteLine(ex.Message);
+			Console.WriteLine(ex.StackTrace);
 			DispatcherQueue.TryEnqueue(() =>
 			{
 				task.IsRunning = false;
