@@ -341,19 +341,18 @@ public class SceneryConverter : INotifyPropertyChanged
 									int glbSize = BitConverter.ToInt32(mdlBytes, j + 4);
 									// byte[] glbBytesPre = br.ReadBytes(glbSize);
 									byte[] glbBytes = mdlBytes[(j + 8)..(j + 8 + glbSize)];
-									byte[] glbBytesJson = mdlBytes[(j + 8)..(j + 8 + glbSize)]; // Copy this for additional safety in processing the JSON
 
 									// Fill the end of the JSON chunk with spaces, and replace non-printable characters with spaces.
-									uint JSONLength = BitConverter.ToUInt32(glbBytesJson, 0x0C);
+									uint JSONLength = BitConverter.ToUInt32(glbBytes, 0x0C);
 									for (int k = 0x14; k < 0x14 + JSONLength; k++)
 									{
-										if (glbBytesJson[k] < 0x20 || glbBytesJson[k] > 0x7E)
+										if (glbBytes[k] < 0x20 || glbBytes[k] > 0x7E)
 										{
-											glbBytesJson[k] = 0x20;
+											glbBytes[k] = 0x20;
 										}
 									}
 
-									JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytesJson, 0x14, (int)JSONLength).Trim());
+									JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytes, 0x14, (int)JSONLength).Trim());
 									JArray meshes = (JArray)json["meshes"]! ?? [];
 									JArray accessors = (JArray)json["accessors"]! ?? [];
 									JArray bufferViews = (JArray)json["bufferViews"]! ?? [];
@@ -371,14 +370,6 @@ public class SceneryConverter : INotifyPropertyChanged
 
 									uint binLength = BitConverter.ToUInt32(glbBytes, 0x14 + (int)JSONLength);
 									byte[] glbBinBytes = glbBytes[(0x14 + (int)JSONLength + 8)..(0x14 + (int)JSONLength + 8 + (int)binLength)];
-
-									JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytesJson, 0x14, (int)JSONLength).Trim());
-									JArray meshes = (JArray)json["meshes"]!;
-									JArray accessors = (JArray)json["accessors"]!;
-									JArray bufferViews = (JArray)json["bufferViews"]!;
-									JArray images = (JArray)json["images"]!;
-									JArray materials = (JArray)json["materials"]!;
-									JArray textures = (JArray)json["textures"]!;
 
 									SceneBuilder sceneLocal = CreateModelFromGlb(glbBytes, inputPath, modelRef.file);
 
