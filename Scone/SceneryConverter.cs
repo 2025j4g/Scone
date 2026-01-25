@@ -353,6 +353,22 @@ public class SceneryConverter : INotifyPropertyChanged
 										}
 									}
 
+									JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytesJson, 0x14, (int)JSONLength).Trim());
+									JArray meshes = (JArray)json["meshes"]! ?? [];
+									JArray accessors = (JArray)json["accessors"]! ?? [];
+									JArray bufferViews = (JArray)json["bufferViews"]! ?? [];
+									JArray images = (JArray)json["images"]! ?? [];
+									JArray materials = (JArray)json["materials"]! ?? [];
+									JArray textures = (JArray)json["textures"]! ?? [];
+
+									if (bufferViews.Count == 0 || accessors.Count == 0 || meshes.Count == 0)
+									{
+										Console.WriteLine($"GLB in model {name} ({modelRef.guid:X}) has no mesh data; skipping.");
+										// Advance j past this GLB record (type[4] + size[4] + payload[glbSize])
+										j += 8 + glbSize;
+										continue;
+									}
+
 									uint binLength = BitConverter.ToUInt32(glbBytes, 0x14 + (int)JSONLength);
 									byte[] glbBinBytes = glbBytes[(0x14 + (int)JSONLength + 8)..(0x14 + (int)JSONLength + 8 + (int)binLength)];
 
