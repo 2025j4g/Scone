@@ -1,5 +1,7 @@
 using Windows.Storage.Pickers;
+#if WINDOWS
 using WinRT.Interop;
+#endif
 using System.Text.Json;
 using Microsoft.UI.Dispatching;
 
@@ -33,8 +35,10 @@ public sealed partial class MainPage : Page
 		};
 		folderPicker.FileTypeFilter.Add("*");
 
+#if WINDOWS
 		nint hwnd = WindowNative.GetWindowHandle(App.MainWindow);
 		InitializeWithWindow.Initialize(folderPicker, hwnd);
+#endif
 
 		StorageFolder folder = await folderPicker.PickSingleFolderAsync();
 		if (folder != null)
@@ -121,15 +125,16 @@ public sealed partial class MainPage : Page
 	private async void BrowseButton_Click(object sender, RoutedEventArgs e)
 	{
 		FolderPicker folderPicker = new()
-
 		{
 			SuggestedStartLocation = PickerLocationId.DocumentsLibrary
 		};
 		folderPicker.FileTypeFilter.Add("*");
 
-		// Get the current window's handle
+#if WINDOWS
+		// Get the current window's handle (Windows only)
 		nint hwnd = WindowNative.GetWindowHandle(App.MainWindow);
 		InitializeWithWindow.Initialize(folderPicker, hwnd);
+#endif
 
 		StorageFolder folder = await folderPicker.PickSingleFolderAsync();
 		if (folder != null)
