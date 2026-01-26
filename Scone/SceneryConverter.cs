@@ -157,6 +157,9 @@ public class SceneryConverter : INotifyPropertyChanged
 		// The key will be the tile index, and the value will be a list of access points of models (file, binary address, size)
 		// After the dictionary has been completed, we will go back through and write out each tile's models to the respective folder
 
+		// Track which GUIDs have models
+		HashSet<Guid> guidsWithModels = [];
+
 		// Look for models after placements have been gathered
 		foreach (string file in allBglFiles)
 		{
@@ -223,10 +226,15 @@ public class SceneryConverter : INotifyPropertyChanged
 					uint modelDataSize = br.ReadUInt32();
 					if (!libraryObjects.ContainsKey(guid))
 					{
+						Console.WriteLine($"Model GUID {guid}, size {modelDataSize} at offset 0x{startModelDataOffset:X} not found in placements; skipping.");
 						bytesRead += (int)modelDataSize + 24;
 						objectsRead++;
 						continue;
 					}
+
+					// Mark this GUID as having a model
+					guidsWithModels.Add(guid);
+
 					List<int> tileIndices = [.. libraryObjects[guid].Select(lo => Terrain.GetTileIndex(lo.latitude, lo.longitude)).Distinct()];
 					foreach (int tileIndex in tileIndices)
 					{
@@ -483,6 +491,32 @@ public class SceneryConverter : INotifyPropertyChanged
 				File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
 			}
 		}
+
+        // Report unused LibraryObjects (placements without models)
+        List<Guid> unusedGuids = libraryObjects.Keys.Where(guid => !guidsWithModels.Contains(guid)).ToList();
+		if (unusedGuids.Count > 0)
+		{
+			Console.WriteLine($"\n=== Found {unusedGuids.Count} LibraryObject GUIDs with placements but no models ===");
+			int totalUnusedPlacements = 0;
+			foreach (var guid in unusedGuids)
+			{
+				int placementCount = libraryObjects[guid].Count;
+				totalUnusedPlacements += placementCount;
+				Console.WriteLine($"GUID: {guid} - {placementCount} placement(s)");
+				// Show first placement as example
+				if (libraryObjects[guid].Count > 0)
+				{
+					var example = libraryObjects[guid][0];
+					Console.WriteLine($"  Example: Lat {example.latitude:F6}, Lon {example.longitude:F6}, Alt {example.altitude:F2}m");
+				}
+			}
+			Console.WriteLine($"Total unused placements: {totalUnusedPlacements}");
+		}
+		else
+		{
+			Console.WriteLine("\nAll LibraryObjects have corresponding models.");
+		}
+
 		Console.WriteLine("Conversion complete.");
 	}
 
