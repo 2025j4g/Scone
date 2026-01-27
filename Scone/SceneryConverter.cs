@@ -22,6 +22,8 @@ public class SceneryConverter : INotifyPropertyChanged
 			OnPropertyChanged();
 		}
 	}
+	public bool AbortAndCancel { get; set; } = false;
+	public bool AbortAndSave { get; set; } = false;
 	public event PropertyChangedEventHandler? PropertyChanged;
 	private readonly MemoryImage Fallback = new("Assets\\tex-fallback.png");
 	public void ConvertScenery(string inputPath, string outputPath)
@@ -273,6 +275,11 @@ public class SceneryConverter : INotifyPropertyChanged
 			double altOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.altitude) / libraryObjectsForTile.Count : 0.0;
 			foreach (ModelReference modelRef in modelRefs)
 			{
+				if (AbortAndCancel)
+				{
+					Console.WriteLine("Conversion aborted by user.");
+					return;
+				}
 				modelsProcessed++;
 				List<LibraryObject> libraryObjectsForModel = libraryObjects.TryGetValue(modelRef.guid, out List<LibraryObject>? value) ? value : [];
 				BinaryReader brModel = new(new FileStream(modelRef.file, FileMode.Open, FileAccess.Read));
@@ -434,6 +441,11 @@ public class SceneryConverter : INotifyPropertyChanged
 				{
 					continue;
 				}
+				if (AbortAndSave)
+				{
+					Console.WriteLine("Conversion aborted by user; saving progress.");
+					break;
+				}
 			}
 			(double lat, double lon) = Terrain.GetLatLon(tileIndex);
 			string lonHemi = lon >= 0 ? "e" : "w";
@@ -490,6 +502,11 @@ public class SceneryConverter : INotifyPropertyChanged
 			string activeName = $"{tileIndex}.{(hasXml ? "xml" : "gltf")}";
 			string placementStr = $"OBJECT_STATIC {activeName} {lonOrigin} {latOrigin} {altOrigin} {270} {0} {90}";
 			File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
+			if (AbortAndSave)
+			{
+				Console.WriteLine("Conversion aborted by user; saving progress.");
+				break;
+			}
 		}
 
 		// Report unused LibraryObjects (placements without models)

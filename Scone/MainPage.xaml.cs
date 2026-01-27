@@ -190,11 +190,10 @@ public sealed partial class MainPage : Page
 		DownloadTask newTask = new()
 		{
 			TaskName = taskName,
-			TaskPath = folderPath
+			TaskPath = folderPath,
+			Progress = 0,
+			ProgressText = "0%"
 		};
-
-		newTask.Progress = 0;
-		newTask.ProgressText = "0%";
 
 		tasks.Add(newTask);
 		UpdateEmptyState();
@@ -206,6 +205,30 @@ public sealed partial class MainPage : Page
 
 		// TODO: Start the actual download process for this task
 		StartDownloadTask(newTask);
+	}
+
+	private void CancelAndSaveButton_Click(object sender, RoutedEventArgs e)
+	{
+		// Get the task from the button's DataContext
+		if (sender is Button button && button.DataContext is DownloadTask task)
+		{
+			if (task.IsRunning)
+			{
+				task._converter.AbortAndSave = true;
+			}
+		}
+	}
+
+	private void CancelEntirelyButton_Click(object sender, RoutedEventArgs e)
+	{
+		// Get the task from the button's DataContext
+		if (sender is Button button && button.DataContext is DownloadTask task)
+		{
+			if (task.IsRunning)
+			{
+				task._converter.AbortAndCancel = true;
+			}
+		}
 	}
 
 	private void UpdateEmptyState()
