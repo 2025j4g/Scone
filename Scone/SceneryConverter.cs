@@ -7,12 +7,11 @@ using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
 using SharpGLTF.Schema2;
-using Uno.Disposables;
 
 namespace Scone;
 
 public class SceneryConverter : INotifyPropertyChanged
-{	
+{
 	private string _status = "Idle";
 	public string Status
 	{
@@ -160,6 +159,7 @@ public class SceneryConverter : INotifyPropertyChanged
 
 		// Track which GUIDs have models
 		HashSet<Guid> guidsWithModels = [];
+		Dictionary<int, List<ModelReference>> modelReferencesByTile = [];
 
 		// Look for models after placements have been gathered
 		foreach (string file in allBglFiles)
@@ -210,8 +210,6 @@ public class SceneryConverter : INotifyPropertyChanged
 				int size = br.ReadInt32();
 				modelDataSubrecords.Add((subrecOffset, size));
 			}
-
-			Dictionary<int, List<ModelReference>> modelReferencesByTile = [];
 			foreach ((int subOffset, int subSize) in modelDataSubrecords)
 			{
 				// Reset per-subrecord counters so all subrecords are processed
@@ -241,11 +239,11 @@ public class SceneryConverter : INotifyPropertyChanged
 					{
 						if (!modelReferencesByTile.TryGetValue(tileIndex, out List<ModelReference>? value))
 						{
-                            value = [];
-                            modelReferencesByTile[tileIndex] = value;
+							value = [];
+							modelReferencesByTile[tileIndex] = value;
 						}
 
-                        value.Add(new ModelReference
+						value.Add(new ModelReference
 						{
 							guid = guid,
 							file = file,
@@ -258,244 +256,244 @@ public class SceneryConverter : INotifyPropertyChanged
 					objectsRead++;
 				}
 			}
-			int totalModelCount = modelReferencesByTile.Values.Sum(l => l.Count);
-			int modelsProcessed = 0;
-			Console.WriteLine($"Found {totalModelCount} models in {Path.GetFileName(file)}");
+		}
+		int totalModelCount = modelReferencesByTile.Values.Sum(l => l.Count);
+		int modelsProcessed = 0;
+		Console.WriteLine($"Found {totalModelCount} models");
 
-			foreach (var kvp in modelReferencesByTile)
+		foreach (var kvp in modelReferencesByTile)
+		{
+			int tileIndex = kvp.Key;
+			List<ModelReference> modelRefs = [.. kvp.Value.OrderByDescending(mr => mr.size)];
+			Console.WriteLine($"Tile {tileIndex} has {modelRefs.Count} model references");
+			SceneBuilder scene = new();
+			List<LibraryObject> libraryObjectsForTile = [.. libraryObjects.Values.SelectMany(loList => loList).Where(lo => Terrain.GetTileIndex(lo.latitude, lo.longitude) == tileIndex)];
+			double latOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.latitude) / libraryObjectsForTile.Count : 0.0;
+			double lonOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.longitude) / libraryObjectsForTile.Count : 0.0;
+			double altOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.altitude) / libraryObjectsForTile.Count : 0.0;
+			foreach (ModelReference modelRef in modelRefs)
 			{
-				int tileIndex = kvp.Key;
-				List<ModelReference> modelRefs = kvp.Value;
-				Console.WriteLine($"Tile {tileIndex} has {modelRefs.Count} model references");
-				SceneBuilder scene = new();
-				List<LibraryObject> libraryObjectsForTile = [.. libraryObjects.Values.SelectMany(loList => loList).Where(lo => Terrain.GetTileIndex(lo.latitude, lo.longitude) == tileIndex)];
-				double latOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.latitude) / libraryObjectsForTile.Count : 0.0;
-				double lonOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.longitude) / libraryObjectsForTile.Count : 0.0;
-				double altOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.altitude) / libraryObjectsForTile.Count : 0.0;
-				foreach (ModelReference modelRef in modelRefs)
+				modelsProcessed++;
+				List<LibraryObject> libraryObjectsForModel = libraryObjects.TryGetValue(modelRef.guid, out List<LibraryObject>? value) ? value : [];
+				BinaryReader brModel = new(new FileStream(modelRef.file, FileMode.Open, FileAccess.Read));
+				_ = brModel.BaseStream.Seek(modelRef.offset, SeekOrigin.Begin);
+				byte[] mdlBytes = brModel.ReadBytes(modelRef.size);
+				Console.WriteLine($"Model reference: {modelRef.file} at offset 0x{modelRef.offset:X} size {modelRef.size} guid {modelRef.guid}");
+				string name = "";
+				List<LodData> lods = [];
+				List<LightObject> lightObjects = [];
+				string chunkID = Encoding.ASCII.GetString(mdlBytes, 0, Math.Min(4, mdlBytes.Length));
+				if (chunkID != "RIFF")
 				{
-					modelsProcessed++;
-					List<LibraryObject> libraryObjectsForModel = libraryObjects.TryGetValue(modelRef.guid, out List<LibraryObject>? value) ? value : [];
-					BinaryReader brModel = new(new FileStream(modelRef.file, FileMode.Open, FileAccess.Read));
-					_ = brModel.BaseStream.Seek(modelRef.offset, SeekOrigin.Begin);
-					byte[] mdlBytes = brModel.ReadBytes(modelRef.size);
-					Console.WriteLine($"Model reference: {modelRef.file} at offset 0x{modelRef.offset:X} size {modelRef.size} guid {modelRef.guid}");
-					string name = "";
-					List<LodData> lods = [];
-					List<LightObject> lightObjects = [];
-					string chunkID = Encoding.ASCII.GetString(mdlBytes, 0, Math.Min(4, mdlBytes.Length));
-					if (chunkID != "RIFF")
+					continue;
+				}
+				List<ModelObject> modelObjects = [];
+				// Enter this model and get LOD info, GLB files, and mesh data
+				for (int i = 8; i < mdlBytes.Length; i += 4)
+				{
+					string chunk = Encoding.ASCII.GetString(mdlBytes, i, Math.Min(4, mdlBytes.Length - i));
+					if (chunk == "GXML")
 					{
-						continue;
-					}
-					List<ModelObject> modelObjects = [];
-					// Enter this model and get LOD info, GLB files, and mesh data
-					for (int i = 8; i < mdlBytes.Length; i += 4)
-					{
-						string chunk = Encoding.ASCII.GetString(mdlBytes, i, Math.Min(4, mdlBytes.Length - i));
-						if (chunk == "GXML")
+						int size = BitConverter.ToInt32(mdlBytes, i + 4);
+						string gxmlContent = Encoding.UTF8.GetString(mdlBytes, i + 8, size);
+						try
 						{
-							int size = BitConverter.ToInt32(mdlBytes, i + 4);
-							string gxmlContent = Encoding.UTF8.GetString(mdlBytes, i + 8, size);
-							try
+							XmlDocument xmlDoc = new();
+							xmlDoc.LoadXml(gxmlContent);
+							name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value.Replace(".gltf", "").Replace(" ", "_") ?? "Unnamed_Model";
+							XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
+							foreach (XmlNode lodNode in lodNodes)
 							{
-								XmlDocument xmlDoc = new();
-								xmlDoc.LoadXml(gxmlContent);
-								name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value.Replace(".gltf", "").Replace(" ", "_") ?? "Unnamed_Model";
-								XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
-								foreach (XmlNode lodNode in lodNodes)
+								string lodObjName = lodNode?.Attributes?["ModelFile"]?.Value.Replace(".gltf", "") ?? "Unnamed";
+								int minSize = 0;
+								try
 								{
-									string lodObjName = lodNode?.Attributes?["ModelFile"]?.Value.Replace(".gltf", "") ?? "Unnamed";
-									int minSize = 0;
-									try
+									minSize = int.Parse(lodNode?.Attributes?["minSize"]?.Value ?? "0");
+								}
+								catch (FormatException)
+								{
+									continue;
+								}
+								if (lodObjName != "Unnamed")
+								{
+									lods.Add(new LodData
 									{
-										minSize = int.Parse(lodNode?.Attributes?["minSize"]?.Value ?? "0");
-									}
-									catch (FormatException)
-									{
-										continue;
-									}
-									if (lodObjName != "Unnamed")
-									{
-										lods.Add(new LodData
-										{
-											name = lodObjName,
-											minSize = minSize
-										});
-									}
+										name = lodObjName,
+										minSize = minSize
+									});
 								}
 							}
-							catch (XmlException)
-							{
-								Console.WriteLine($"Failed to parse GXML for model {modelRef.guid:X}");
-							}
-							i += size;
 						}
-						else if (chunk == "GLBD")
+						catch (XmlException)
 						{
-							Console.WriteLine($"Processing GLBD chunk for model {name} ({modelRef.guid:X}) in {file}");
-							Status = $"Processing model {name} ({modelsProcessed} of {totalModelCount})...";
-							int size = BitConverter.ToInt32(mdlBytes, i + 4);
-							int glbIndex = 0; // for unique filenames per GLB in this chunk
+							Console.WriteLine($"Failed to parse GXML for model {modelRef.guid:X}");
+						}
+						i += size;
+					}
+					else if (chunk == "GLBD")
+					{
+						Console.WriteLine($"Processing GLBD chunk for model {name} ({modelRef.guid:X}) in {modelRef.file}");
+						Status = $"Processing model {name} ({modelsProcessed} of {totalModelCount})...";
+						int size = BitConverter.ToInt32(mdlBytes, i + 4);
+						int glbIndex = 0; // for unique filenames per GLB in this chunk
 
-							// Scan GLBD payload and skip past each GLB block once processed
-							for (int j = i + 8; j < i + 8 + size;)
+						// Scan GLBD payload and skip past each GLB block once processed
+						for (int j = i + 8; j < i + 8 + size;)
+						{
+							// Ensure there are at least 8 bytes for type + size
+							if (j + 8 > mdlBytes.Length) break;
+
+							string sig = Encoding.ASCII.GetString(mdlBytes, j, Math.Min(4, mdlBytes.Length - j));
+							if (sig == "GLB\0")
 							{
-								// Ensure there are at least 8 bytes for type + size
-								if (j + 8 > mdlBytes.Length) break;
+								int glbSize = BitConverter.ToInt32(mdlBytes, j + 4);
+								// byte[] glbBytesPre = br.ReadBytes(glbSize);
+								byte[] glbBytes = mdlBytes[(j + 8)..(j + 8 + glbSize)];
 
-								string sig = Encoding.ASCII.GetString(mdlBytes, j, Math.Min(4, mdlBytes.Length - j));
-								if (sig == "GLB\0")
+								// Fill the end of the JSON chunk with spaces, and replace non-printable characters with spaces.
+								uint JSONLength = BitConverter.ToUInt32(glbBytes, 0x0C);
+								for (int k = 0x14; k < 0x14 + JSONLength; k++)
 								{
-									int glbSize = BitConverter.ToInt32(mdlBytes, j + 4);
-									// byte[] glbBytesPre = br.ReadBytes(glbSize);
-									byte[] glbBytes = mdlBytes[(j + 8)..(j + 8 + glbSize)];
-
-									// Fill the end of the JSON chunk with spaces, and replace non-printable characters with spaces.
-									uint JSONLength = BitConverter.ToUInt32(glbBytes, 0x0C);
-									for (int k = 0x14; k < 0x14 + JSONLength; k++)
+									if (glbBytes[k] < 0x20 || glbBytes[k] > 0x7E)
 									{
-										if (glbBytes[k] < 0x20 || glbBytes[k] > 0x7E)
-										{
-											glbBytes[k] = 0x20;
-										}
+										glbBytes[k] = 0x20;
 									}
+								}
 
-									JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytes, 0x14, (int)JSONLength).Trim());
-									JArray meshes = (JArray)json["meshes"]! ?? [];
-									JArray accessors = (JArray)json["accessors"]! ?? [];
-									JArray bufferViews = (JArray)json["bufferViews"]! ?? [];
-									JArray images = (JArray)json["images"]! ?? [];
-									JArray materials = (JArray)json["materials"]! ?? [];
-									JArray textures = (JArray)json["textures"]! ?? [];
+								JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytes, 0x14, (int)JSONLength).Trim());
+								JArray meshes = (JArray)json["meshes"]! ?? [];
+								JArray accessors = (JArray)json["accessors"]! ?? [];
+								JArray bufferViews = (JArray)json["bufferViews"]! ?? [];
+								JArray images = (JArray)json["images"]! ?? [];
+								JArray materials = (JArray)json["materials"]! ?? [];
+								JArray textures = (JArray)json["textures"]! ?? [];
 
-									if (bufferViews.Count == 0 || accessors.Count == 0 || meshes.Count == 0)
-									{
-										Console.WriteLine($"GLB in model {name} ({modelRef.guid:X}) has no mesh data; skipping.");
-										// Advance j past this GLB record (type[4] + size[4] + payload[glbSize])
-										j += 8 + glbSize;
-										continue;
-									}
-
-									uint binLength = BitConverter.ToUInt32(glbBytes, 0x14 + (int)JSONLength);
-									byte[] glbBinBytes = glbBytes[(0x14 + (int)JSONLength + 8)..(0x14 + (int)JSONLength + 8 + (int)binLength)];
-
-									SceneBuilder sceneLocal = CreateModelFromGlb(glbBytes, inputPath, modelRef.file);
-
-									// Write GLB with unique filename (include index to avoid overwrites)
-									string safeName = name;
-									string outName = glbIndex < lods.Count ? lods[glbIndex].name : $"{safeName}_glb{glbIndex}";
-									modelObjects.Add(new ModelObject
-									{
-										name = outName.Replace(" ", "_"),
-										minSize = glbIndex < lods.Count ? lods[glbIndex].minSize : 0,
-										model = sceneLocal
-									});
-									foreach (LibraryObject libObj in libraryObjectsForModel)
-									{
-										double deg2rad = Math.PI / 180.0;
-										double lonOffsetMeters = -(libObj.longitude - lonOrigin) * 111320.0 * Math.Cos(latOrigin * deg2rad);
-										double latOffsetMeters = (libObj.latitude - latOrigin) * 110540.0;
-										double altOffsetMeters = libObj.altitude - altOrigin;
-
-										// glTF: X = east (lon), Y = up (alt), Z = south (lat)
-										Vector3 translation = new((float)lonOffsetMeters, (float)altOffsetMeters, (float)latOffsetMeters);
-										float yaw = (float)(-libObj.heading * deg2rad); // negative for right-handed glTF
-										float pitch = (float)(libObj.pitch * deg2rad);
-										float roll = (float)(libObj.bank * deg2rad);
-										Quaternion rotation = Quaternion.CreateFromYawPitchRoll(yaw, pitch, roll);
-										Vector3 scale = new((float)libObj.scale, (float)libObj.scale, (float)libObj.scale);
-										Matrix4x4 transform = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(translation);
-										_ = scene.AddScene(sceneLocal, transform);
-									}
-									glbIndex++;
-
+								if (bufferViews.Count == 0 || accessors.Count == 0 || meshes.Count == 0)
+								{
+									Console.WriteLine($"GLB in model {name} ({modelRef.guid:X}) has no mesh data; skipping.");
 									// Advance j past this GLB record (type[4] + size[4] + payload[glbSize])
 									j += 8 + glbSize;
-									if (glbIndex >= 1)
-									{
-										Console.WriteLine($"More than one LOD present for {name}; skipping remaining GLB in chunk.");
-										// The highest LOD is the first GLB; break after processing it
-										break;
-									}
+									continue;
 								}
-								else
+
+								uint binLength = BitConverter.ToUInt32(glbBytes, 0x14 + (int)JSONLength);
+								byte[] glbBinBytes = glbBytes[(0x14 + (int)JSONLength + 8)..(0x14 + (int)JSONLength + 8 + (int)binLength)];
+
+								SceneBuilder sceneLocal = CreateModelFromGlb(glbBytes, inputPath, modelRef.file);
+
+								// Write GLB with unique filename (include index to avoid overwrites)
+								string safeName = name;
+								string outName = glbIndex < lods.Count ? lods[glbIndex].name : $"{safeName}_glb{glbIndex}";
+								modelObjects.Add(new ModelObject
 								{
-									// Not a GLB block; advance reasonably (try to skip unknown 8-byte header or 4-byte step)
-									// Prefer 4-byte alignment advance to find next signature
-									j += 4;
+									name = outName.Replace(" ", "_"),
+									minSize = glbIndex < lods.Count ? lods[glbIndex].minSize : 0,
+									model = sceneLocal
+								});
+								foreach (LibraryObject libObj in libraryObjectsForModel)
+								{
+									double deg2rad = Math.PI / 180.0;
+									double lonOffsetMeters = -(libObj.longitude - lonOrigin) * 111320.0 * Math.Cos(latOrigin * deg2rad);
+									double latOffsetMeters = (libObj.latitude - latOrigin) * 110540.0;
+									double altOffsetMeters = libObj.altitude - altOrigin;
+
+									// glTF: X = east (lon), Y = up (alt), Z = south (lat)
+									Vector3 translation = new((float)lonOffsetMeters, (float)altOffsetMeters, (float)latOffsetMeters);
+									float yaw = (float)(-libObj.heading * deg2rad); // negative for right-handed glTF
+									float pitch = (float)(libObj.pitch * deg2rad);
+									float roll = (float)(libObj.bank * deg2rad);
+									Quaternion rotation = Quaternion.CreateFromYawPitchRoll(yaw, pitch, roll);
+									Vector3 scale = new((float)libObj.scale, (float)libObj.scale, (float)libObj.scale);
+									Matrix4x4 transform = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(translation);
+									_ = scene.AddScene(sceneLocal, transform);
+								}
+								glbIndex++;
+
+								// Advance j past this GLB record (type[4] + size[4] + payload[glbSize])
+								j += 8 + glbSize;
+								if (glbIndex >= 1)
+								{
+									Console.WriteLine($"More than one LOD present for {name}; skipping remaining GLB in chunk.");
+									// The highest LOD is the first GLB; break after processing it
+									break;
 								}
 							}
-
-							// Advance i past the GLBD chunk payload
-							i += size;
-						}
-					}
-					if (modelObjects.Count == 0)
-					{
-						continue;
-					}
-				}
-				(double lat, double lon) = Terrain.GetLatLon(tileIndex);
-				string lonHemi = lon >= 0 ? "e" : "w";
-				string latHemi = lat >= 0 ? "n" : "s";
-				string path = $"{outputPath}/Objects/{lonHemi}{Math.Abs(Math.Floor(lon / 10)) * 10:000}{latHemi}{Math.Abs(Math.Floor(lat / 10)) * 10:00}/{lonHemi}{Math.Abs(Math.Floor(lon)):000}{latHemi}{Math.Abs(Math.Floor(lat)):00}";
-				if (!Directory.Exists(path))
-				{
-					_ = Directory.CreateDirectory(path);
-				}
-
-				string outGlbPath = Path.Combine(path, $"{tileIndex}.gltf");
-				Status = "Saving model to disk...";
-				scene.ToGltf2().SaveGLTF(outGlbPath, new WriteSettings
-				{
-					ImageWriting = ResourceWriteMode.SatelliteFile,
-					ImageWriteCallback = (context, assetName, image) =>
-					{
-						string fileName = string.IsNullOrEmpty(image.SourcePath) ? assetName : image.SourcePath.Split(Path.DirectorySeparatorChar).Last();
-						fileName = fileName.Replace(" ", "_");
-						string finalPath = Path.Combine(path, fileName);
-
-						// Only write the image once
-						if (!File.Exists(finalPath) && !image.Content.Span.SequenceEqual(Fallback.Content.Span))
-						{
-							File.WriteAllBytes(finalPath, image.Content.ToArray());
-						}
-
-						// Return the URI that should appear in the glTF
-						return fileName;
-					},
-					JsonPostprocessor = (json) =>
-					{
-						// Fix for MSFT_texture_dds extension not being properly handled
-						JObject gltfText = JObject.Parse(json);
-						if (gltfText["textures"] != null)
-						{
-							foreach (JObject tex in gltfText["textures"]!.Cast<JObject>())
+							else
 							{
-								if (tex["extensions"]?["MSFT_texture_dds"] != null)
-								{
-									tex["source"] = tex["extensions"]?["MSFT_texture_dds"]?["source"];
-								}
-								else if (tex["extensions"]?["KHR_texture_basisu"] != null)
-								{
-									tex["source"] = tex["extensions"]?["KHR_texture_basisu"]?["source"];
-								}
+								// Not a GLB block; advance reasonably (try to skip unknown 8-byte header or 4-byte step)
+								// Prefer 4-byte alignment advance to find next signature
+								j += 4;
 							}
 						}
-						return gltfText.ToString();
-					}
-				});
 
-				bool hasXml = false;
-				string activeName = $"{tileIndex}.{(hasXml ? "xml" : "gltf")}";
-				string placementStr = $"OBJECT_STATIC {activeName} {lonOrigin} {latOrigin} {altOrigin} {270} {0} {90}";
-				File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
+						// Advance i past the GLBD chunk payload
+						i += size;
+					}
+				}
+				if (modelObjects.Count == 0)
+				{
+					continue;
+				}
 			}
+			(double lat, double lon) = Terrain.GetLatLon(tileIndex);
+			string lonHemi = lon >= 0 ? "e" : "w";
+			string latHemi = lat >= 0 ? "n" : "s";
+			string path = $"{outputPath}/Objects/{lonHemi}{Math.Abs(Math.Floor(lon / 10)) * 10:000}{latHemi}{Math.Abs(Math.Floor(lat / 10)) * 10:00}/{lonHemi}{Math.Abs(Math.Floor(lon)):000}{latHemi}{Math.Abs(Math.Floor(lat)):00}";
+			if (!Directory.Exists(path))
+			{
+				_ = Directory.CreateDirectory(path);
+			}
+
+			string outGlbPath = Path.Combine(path, $"{tileIndex}.gltf");
+			Status = "Saving model to disk...";
+			scene.ToGltf2().SaveGLTF(outGlbPath, new WriteSettings
+			{
+				ImageWriting = ResourceWriteMode.SatelliteFile,
+				ImageWriteCallback = (context, assetName, image) =>
+				{
+					string fileName = string.IsNullOrEmpty(image.SourcePath) ? assetName : image.SourcePath.Split(Path.DirectorySeparatorChar).Last();
+					fileName = fileName.Replace(" ", "_");
+					string finalPath = Path.Combine(path, fileName);
+
+					// Only write the image once
+					if (!File.Exists(finalPath) && !image.Content.Span.SequenceEqual(Fallback.Content.Span))
+					{
+						File.WriteAllBytes(finalPath, image.Content.ToArray());
+					}
+
+					// Return the URI that should appear in the glTF
+					return fileName;
+				},
+				JsonPostprocessor = (json) =>
+				{
+					// Fix for MSFT_texture_dds extension not being properly handled
+					JObject gltfText = JObject.Parse(json);
+					if (gltfText["textures"] != null)
+					{
+						foreach (JObject tex in gltfText["textures"]!.Cast<JObject>())
+						{
+							if (tex["extensions"]?["MSFT_texture_dds"] != null)
+							{
+								tex["source"] = tex["extensions"]?["MSFT_texture_dds"]?["source"];
+							}
+							else if (tex["extensions"]?["KHR_texture_basisu"] != null)
+							{
+								tex["source"] = tex["extensions"]?["KHR_texture_basisu"]?["source"];
+							}
+						}
+					}
+					return gltfText.ToString();
+				}
+			});
+
+			bool hasXml = false;
+			string activeName = $"{tileIndex}.{(hasXml ? "xml" : "gltf")}";
+			string placementStr = $"OBJECT_STATIC {activeName} {lonOrigin} {latOrigin} {altOrigin} {270} {0} {90}";
+			File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
 		}
 
-        // Report unused LibraryObjects (placements without models)
-        List<Guid> unusedGuids = libraryObjects.Keys.Where(guid => !guidsWithModels.Contains(guid)).ToList();
+		// Report unused LibraryObjects (placements without models)
+		List<Guid> unusedGuids = libraryObjects.Keys.Where(guid => !guidsWithModels.Contains(guid)).ToList();
 		if (unusedGuids.Count > 0)
 		{
 			Console.WriteLine($"\n=== Found {unusedGuids.Count} LibraryObject GUIDs with placements but no models ===");
