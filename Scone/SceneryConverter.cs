@@ -25,7 +25,6 @@ public class SceneryConverter : INotifyPropertyChanged
 	public bool AbortAndCancel { get; set; } = false;
 	public bool AbortAndSave { get; set; } = false;
 	public event PropertyChangedEventHandler? PropertyChanged;
-	private readonly MemoryImage Fallback = new("Assets/tex-fallback.png");
 	public void ConvertScenery(string inputPath, string outputPath)
 	{
 		if (!Directory.Exists(inputPath))
