@@ -256,13 +256,23 @@ public sealed partial class MainPage : Page
 
 		try
 		{
+			Logger.Info($"Starting conversion task: {task.TaskName} (Path: {task.TaskPath})");
 			await Task.Run(() =>
 			{
-				task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!);
+				try
+				{
+					task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!);
+				}
+				catch (Exception innerEx)
+				{
+					Logger.Error($"Exception during conversion for task '{task.TaskName}'", innerEx);
+					throw;
+				}
 			});
 
 			// Conversion complete - remove task from UI
-			DispatcherQueue.TryEnqueue(() =>
+			Logger.Info($"Conversion completed successfully for task: {task.TaskName}");
+			bool enqueued = DispatcherQueue.TryEnqueue(() =>
 			{
 				task.IsRunning = false;
 				task.Status = "Completed!";
@@ -277,16 +287,29 @@ public sealed partial class MainPage : Page
 					});
 				});
 			});
+
+			if (!enqueued)
+			{
+				Logger.Warning("Failed to enqueue completion status to UI thread");
+			}
 		}
 		catch (Exception ex)
 		{
-			Console.WriteLine(ex.Message);
-			Console.WriteLine(ex.StackTrace);
-			DispatcherQueue.TryEnqueue(() =>
+			Logger.Error($"Error in StartDownloadTask for '{task.TaskName}'", ex);
+			bool enqueued = DispatcherQueue.TryEnqueue(() =>
 			{
 				task.IsRunning = false;
 				task.Status = $"Error: {ex.Message}";
 			});
+
+			if (!enqueued)
+			{
+				Logger.Warning("Failed to enqueue error status to UI thread");
+			}
+		}
+		finally
+		{
+			Logger.FlushToFile();
 		}
 	}
 }
@@ -313,10 +336,29 @@ public class DownloadTask : INotifyPropertyChanged
 			if (e.PropertyName == nameof(SceneryConverter.Status))
 			{
 				// Marshal the property change notification to the UI thread
-				_dispatcher?.TryEnqueue(() =>
+				if (_dispatcher != null)
 				{
-					OnPropertyChanged(nameof(Status));
-				});
+					bool enqueued = _dispatcher.TryEnqueue(() =>
+					{
+						try
+						{
+							OnPropertyChanged(nameof(Status));
+						}
+						catch (Exception ex)
+						{
+							Logger.Error("Error updating status property", ex);
+						}
+					});
+
+					if (!enqueued)
+					{
+						Logger.Warning("Failed to enqueue status update to UI thread");
+					}
+				}
+				else
+				{
+					Logger.Error("Dispatcher is null - cannot update UI");
+				}
 			}
 		};
 	}

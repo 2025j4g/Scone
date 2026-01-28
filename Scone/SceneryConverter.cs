@@ -30,7 +30,7 @@ public class SceneryConverter : INotifyPropertyChanged
 	{
 		if (!Directory.Exists(inputPath))
 		{
-			Console.WriteLine("Input path does not exist.");
+			Logger.Error($"Input path does not exist: {inputPath}");
 			return;
 		}
 
@@ -50,7 +50,7 @@ public class SceneryConverter : INotifyPropertyChanged
 			if (!magicNumber1.SequenceEqual(new byte[] { 0x01, 0x02, 0x92, 0x19 }) ||
 				!magicNumber2.SequenceEqual(new byte[] { 0x03, 0x18, 0x05, 0x08 }))
 			{
-				Console.WriteLine("Invalid BGL header");
+				Logger.Warning($"Invalid BGL header in placement file: {Path.GetFileName(file)}");
 				continue;
 			}
 			_ = br.BaseStream.Seek(0x14, SeekOrigin.Begin);
@@ -100,7 +100,7 @@ public class SceneryConverter : INotifyPropertyChanged
 					if (id != 0x0B) // LibraryObject
 					{
 						uint skip = br.ReadUInt16();
-						Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {skip} bytes");
+						Logger.Warning($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {skip} bytes");
 						_ = br.BaseStream.Seek(subOffset + skip, SeekOrigin.Begin);
 						bytesRead += (int)skip;
 						continue;
@@ -148,7 +148,7 @@ public class SceneryConverter : INotifyPropertyChanged
 					libraryObjects[guid].Add(libObj);
 					totalLibraryObjects++;
 					Status = $"Looking for placements in {Path.GetFileName(file)}... found {totalLibraryObjects}";
-					Console.WriteLine($"{guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
+					Logger.Debug($"{guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 					bytesRead += size;
 				}
 			}
@@ -176,7 +176,7 @@ public class SceneryConverter : INotifyPropertyChanged
 			if (!magicNumber1.SequenceEqual(new byte[] { 0x01, 0x02, 0x92, 0x19 }) ||
 				!magicNumber2.SequenceEqual(new byte[] { 0x03, 0x18, 0x05, 0x08 }))
 			{
-				Console.WriteLine("Invalid BGL header");
+				Logger.Warning($"Invalid BGL header in model data file: {Path.GetFileName(file)}");
 				continue;
 			}
 			_ = br.BaseStream.Seek(0x14, SeekOrigin.Begin);
@@ -227,7 +227,7 @@ public class SceneryConverter : INotifyPropertyChanged
 					uint modelDataSize = br.ReadUInt32();
 					if (!libraryObjects.ContainsKey(guid))
 					{
-						Console.WriteLine($"Model GUID {guid}, size {modelDataSize} at offset 0x{startModelDataOffset:X} not found in placements; skipping.");
+						Logger.Info($"Model GUID {guid}, size {modelDataSize} at offset 0x{startModelDataOffset:X} not found in placements; skipping.");
 						bytesRead += (int)modelDataSize + 24;
 						objectsRead++;
 						continue;
@@ -261,13 +261,13 @@ public class SceneryConverter : INotifyPropertyChanged
 		}
 		int totalModelCount = modelReferencesByTile.Values.Sum(l => l.Count);
 		int modelsProcessed = 0;
-		Console.WriteLine($"Found {totalModelCount} models");
+		Logger.Info($"Found {totalModelCount} models");
 
 		foreach (var kvp in modelReferencesByTile)
 		{
 			int tileIndex = kvp.Key;
 			List<ModelReference> modelRefs = [.. kvp.Value.OrderByDescending(mr => mr.size)];
-			Console.WriteLine($"Tile {tileIndex} has {modelRefs.Count} model references");
+			Logger.Info($"Tile {tileIndex} has {modelRefs.Count} model references");
 			SceneBuilder scene = new();
 			List<LibraryObject> libraryObjectsForTile = [.. libraryObjects.Values.SelectMany(loList => loList).Where(lo => Terrain.GetTileIndex(lo.latitude, lo.longitude) == tileIndex)];
 			double latOrigin = libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.latitude) / libraryObjectsForTile.Count : 0.0;
@@ -277,7 +277,7 @@ public class SceneryConverter : INotifyPropertyChanged
 			{
 				if (AbortAndCancel)
 				{
-					Console.WriteLine("Conversion aborted by user.");
+					Logger.Info("Conversion aborted by user.");
 					return;
 				}
 				modelsProcessed++;
@@ -285,7 +285,7 @@ public class SceneryConverter : INotifyPropertyChanged
 				BinaryReader brModel = new(new FileStream(modelRef.file, FileMode.Open, FileAccess.Read));
 				_ = brModel.BaseStream.Seek(modelRef.offset, SeekOrigin.Begin);
 				byte[] mdlBytes = brModel.ReadBytes(modelRef.size);
-				Console.WriteLine($"Model reference: {modelRef.file} at offset 0x{modelRef.offset:X} size {modelRef.size} guid {modelRef.guid}");
+				Logger.Debug($"Model reference: {modelRef.file} at offset 0x{modelRef.offset:X} size {modelRef.size} guid {modelRef.guid}");
 				string name = "";
 				List<LodData> lods = [];
 				List<LightObject> lightObjects = [];
@@ -333,13 +333,13 @@ public class SceneryConverter : INotifyPropertyChanged
 						}
 						catch (XmlException)
 						{
-							Console.WriteLine($"Failed to parse GXML for model {modelRef.guid:X}");
+							Logger.Warning($"Failed to parse GXML for model {modelRef.guid:X}");
 						}
 						i += size;
 					}
 					else if (chunk == "GLBD")
 					{
-						Console.WriteLine($"Processing GLBD chunk for model {name} ({modelRef.guid:X}) in {modelRef.file}");
+						Logger.Info($"Processing GLBD chunk for model {name} ({modelRef.guid:X}) in {modelRef.file}");
 						Status = $"Processing model {name} ({modelsProcessed} of {totalModelCount})...";
 						int size = BitConverter.ToInt32(mdlBytes, i + 4);
 						int glbIndex = 0; // for unique filenames per GLB in this chunk
@@ -377,7 +377,7 @@ public class SceneryConverter : INotifyPropertyChanged
 
 								if (bufferViews.Count == 0 || accessors.Count == 0 || meshes.Count == 0)
 								{
-									Console.WriteLine($"GLB in model {name} ({modelRef.guid:X}) has no mesh data; skipping.");
+									Logger.Info($"GLB in model {name} ({modelRef.guid:X}) has no mesh data; skipping.");
 									// Advance j past this GLB record (type[4] + size[4] + payload[glbSize])
 									j += 8 + glbSize;
 									continue;
@@ -420,7 +420,7 @@ public class SceneryConverter : INotifyPropertyChanged
 								j += 8 + glbSize;
 								if (glbIndex >= 1)
 								{
-									Console.WriteLine($"More than one LOD present for {name}; skipping remaining GLB in chunk.");
+									Logger.Info($"More than one LOD present for {name}; skipping remaining GLB in chunk.");
 									// The highest LOD is the first GLB; break after processing it
 									break;
 								}
@@ -443,7 +443,7 @@ public class SceneryConverter : INotifyPropertyChanged
 				}
 				if (AbortAndSave)
 				{
-					Console.WriteLine("Conversion aborted by user; saving progress.");
+					Logger.Info("Conversion aborted by user; saving progress.");
 					break;
 				}
 			}
@@ -641,7 +641,7 @@ public class SceneryConverter : INotifyPropertyChanged
 			File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
 			if (AbortAndSave)
 			{
-				Console.WriteLine("Conversion aborted by user; saving progress.");
+				Logger.Info("Conversion aborted by user; saving progress.");
 				break;
 			}
 		}
@@ -650,28 +650,29 @@ public class SceneryConverter : INotifyPropertyChanged
 		List<Guid> unusedGuids = libraryObjects.Keys.Where(guid => !guidsWithModels.Contains(guid)).ToList();
 		if (unusedGuids.Count > 0)
 		{
-			Console.WriteLine($"\n=== Found {unusedGuids.Count} LibraryObject GUIDs with placements but no models ===");
+			Logger.Info($"\n=== Found {unusedGuids.Count} LibraryObject GUIDs with placements but no models ===");
 			int totalUnusedPlacements = 0;
 			foreach (var guid in unusedGuids)
 			{
 				int placementCount = libraryObjects[guid].Count;
 				totalUnusedPlacements += placementCount;
-				Console.WriteLine($"GUID: {guid} - {placementCount} placement(s)");
+				Logger.Debug($"GUID: {guid} - {placementCount} placement(s)");
 				// Show first placement as example
 				if (libraryObjects[guid].Count > 0)
 				{
 					var example = libraryObjects[guid][0];
-					Console.WriteLine($"  Example: Lat {example.latitude:F6}, Lon {example.longitude:F6}, Alt {example.altitude:F2}m");
+					Logger.Debug($"  Example: Lat {example.latitude:F6}, Lon {example.longitude:F6}, Alt {example.altitude:F2}m");
 				}
 			}
-			Console.WriteLine($"Total unused placements: {totalUnusedPlacements}");
+			Logger.Info($"Total unused placements: {totalUnusedPlacements}");
 		}
 		else
 		{
-			Console.WriteLine("\nAll LibraryObjects have corresponding models.");
+			Logger.Info("\nAll LibraryObjects have corresponding models.");
 		}
 
-		Console.WriteLine("Conversion complete.");
+		Logger.Info("Conversion complete.");
+		Logger.FlushToFile();
 	}
 
 	private static SceneBuilder CreateModelFromGltf(byte[] glbBinBytes, JObject json, string inputPath, string file)

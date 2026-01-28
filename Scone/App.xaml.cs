@@ -106,12 +106,12 @@ public partial class App : Application
 #endif
 
 			// Exclude logs below this level
-			builder.SetMinimumLevel(LogLevel.Information);
+			builder.SetMinimumLevel((Microsoft.Extensions.Logging.LogLevel)LogLevel.Info);
 
 			// Default filters for Uno Platform namespaces
-			builder.AddFilter("Uno", LogLevel.Warning);
-			builder.AddFilter("Windows", LogLevel.Warning);
-			builder.AddFilter("Microsoft", LogLevel.Warning);
+			builder.AddFilter("Uno", (Microsoft.Extensions.Logging.LogLevel)LogLevel.Warning);
+			builder.AddFilter("Windows", (Microsoft.Extensions.Logging.LogLevel)LogLevel.Warning);
+			builder.AddFilter("Microsoft", (Microsoft.Extensions.Logging.LogLevel)LogLevel.Warning);
 
 			// Generic Xaml events
 			// builder.AddFilter("Microsoft.UI.Xaml", LogLevel.Debug );
