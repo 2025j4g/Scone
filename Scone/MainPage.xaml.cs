@@ -261,7 +261,7 @@ public sealed partial class MainPage : Page
 			{
 				try
 				{
-					task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!);
+					task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!, true, false);
 				}
 				catch (Exception innerEx)
 				{
