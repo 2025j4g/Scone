@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Numerics;
+using Newtonsoft.Json.Linq;
+using SharpGLTF.Schema2;
 
 namespace Scone;
 
@@ -8,6 +10,7 @@ public class AcBuilder
 	public string Header { get; private set; } = "AC3Db";
 	public List<Material> Materials { get; private set; } = [];
 	public List<Object> Objects { get; private set; } = [];
+	public HashSet<string> TextureFiles { get; private set; } = [];
 
 	public AcBuilder() { }
 
@@ -38,13 +41,16 @@ public class AcBuilder
 		return poly;
 	}
 
-	public void Merge(AcBuilder other, Matrix4x4? transform = null)
+	public void Merge(AcBuilder other, Matrix4x4? transform = null, string? name = null)
 	{
 		// Track the material index offset for updating surface references
 		int materialOffset = Materials.Count;
 
 		// Merge materials
 		Materials.AddRange(other.Materials);
+
+		// Merge textures
+		TextureFiles.UnionWith(other.TextureFiles);
 
 		Vector3? scale = null;
 
@@ -64,7 +70,7 @@ public class AcBuilder
 			// Create rotation matrix from quaternion
 			Matrix4x4 rotationMatrix = Matrix4x4.CreateFromQuaternion(rotation);
 
-			Group wrapper = new("merged")
+			Group wrapper = new(name ?? "merged")
 			{
 				Rotation = rotationMatrix,
 				Location = translation
@@ -389,6 +395,259 @@ public class AcBuilder
 		return value.ToString("0.######", CultureInfo.InvariantCulture);
 	}
 
+	// Build AC3D Poly from glTF mesh primitive data
+	public Poly? BuildPolyFromGltf(string srcPath, string srcBgl, JObject meshJson, JArray accJson, JArray bvJson,
+		JArray matsJson, JArray texJson, JArray imgJson, byte[] glbBinBytes, ref List<Material> materials)
+	{
+		string meshName = meshJson["name"]?.Value<string>() ?? "UnnamedMesh";
+		JArray primitives = (JArray)meshJson["primitives"]!;
+
+		if (primitives.Count == 0) return null;
+
+		// For now, just handle the first primitive (can expand later to handle multiple)
+		JObject primJson = (JObject)primitives[0]!;
+
+		// Check for invisible material
+		int materialIndex = primJson["material"]?.Value<int>() ?? -1;
+		if (materialIndex >= 0 && materialIndex < matsJson.Count)
+		{
+			JObject matJson = (JObject)matsJson[materialIndex];
+			if (matJson["extensions"]?["ASOBO_material_invisible"] != null || matJson["extensions"]?["ASOBO_material_environment_occluder"] != null)
+				return null;
+		}
+
+		Poly poly = new(meshName);
+
+		// Get accessor indices
+		int? idxAccIndex = primJson["indices"]?.Value<int>();
+		int? posAccIndex = primJson["attributes"]?["POSITION"]?.Value<int>();
+		int? texCoord0Index = primJson["attributes"]?["TEXCOORD_0"]?.Value<int>();
+
+		if (!posAccIndex.HasValue) return null;
+
+		// Load position data
+		Vector3[] positions = LoadPositionData((JObject)accJson[posAccIndex.Value], bvJson, glbBinBytes);
+		foreach (var pos in positions)
+		{
+			poly.AddVertex(pos);
+		}
+
+		// Load texture coordinates if available
+		Vector2[]? texCoords = null;
+		if (texCoord0Index.HasValue && texCoord0Index.Value < accJson.Count)
+		{
+			texCoords = LoadTexCoordData((JObject)accJson[texCoord0Index.Value], bvJson, glbBinBytes);
+		}
+
+		// Load indices
+		int[]? indices = null;
+		if (idxAccIndex.HasValue && idxAccIndex.Value < accJson.Count)
+		{
+			indices = LoadIndexData((JObject)accJson[idxAccIndex.Value], bvJson, glbBinBytes);
+		}
+
+		// Process material
+		int? acMatIndex = null;
+		string? texturePath = null;
+		if (materialIndex >= 0 && materialIndex < matsJson.Count)
+		{
+			JObject matJson = (JObject)matsJson[materialIndex];
+			string matName = matJson["name"]?.Value<string>() ?? "Material";
+
+			// Extract material properties
+			Vector3 baseColor = Vector3.One;
+			if (matJson["pbrMetallicRoughness"]?["baseColorFactor"] != null)
+			{
+				JArray colorFactor = (JArray)matJson["pbrMetallicRoughness"]!["baseColorFactor"]!;
+				baseColor = new Vector3(
+					colorFactor[0].Value<float>(),
+					colorFactor[1].Value<float>(),
+					colorFactor[2].Value<float>()
+				);
+			}
+
+			// Get texture if present
+			if (matJson["pbrMetallicRoughness"]?["baseColorTexture"] != null)
+			{
+				int texIndex = matJson["pbrMetallicRoughness"]!["baseColorTexture"]!["index"]!.Value<int>();
+				if (texIndex >= 0 && texIndex < texJson.Count)
+				{
+					string imgUri = imgJson[texJson[texIndex]["extensions"]!["MSFT_texture_dds"]!["source"]!.Value<int>()]["uri"]!.Value<string>()?.Split('\\').Last()?.Split('/').Last() ?? "";
+					if (!string.IsNullOrEmpty(imgUri))
+					{
+						string[] imageMatches = [.. Directory.GetFiles(srcPath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imgUri, StringComparison.OrdinalIgnoreCase))];
+
+						int bestScore = -1;
+						foreach (string match in imageMatches)
+						{
+							int i = 0;
+							while (i < Math.Min(match.Length, srcBgl.Length) && match[i] == srcBgl[i])
+								i++;
+							if (i > bestScore)
+							{
+								bestScore = i;
+								texturePath = match;
+							}
+						}
+					}
+				}
+			}
+
+			// Create AC3D material
+			Material acMat = new()
+			{
+				Name = matName,
+				Rgb = baseColor,
+				Ambient = new Vector3(0.2f, 0.2f, 0.2f),
+				Emissive = Vector3.Zero,
+				Specular = new Vector3(0.5f, 0.5f, 0.5f),
+				Shininess = 10,
+				Transparency = 0
+			};
+
+			// Check if material already exists (deduplicate)
+			acMatIndex = -1;
+			for (int i = 0; i < materials.Count; i++)
+			{
+				Material existing = materials[i];
+				if (existing.Name == acMat.Name &&
+					existing.Rgb == acMat.Rgb &&
+					existing.Ambient == acMat.Ambient &&
+					existing.Emissive == acMat.Emissive &&
+					existing.Specular == acMat.Specular &&
+					existing.Shininess == acMat.Shininess &&
+					Math.Abs(existing.Transparency - acMat.Transparency) < 0.001f)
+				{
+					acMatIndex = i;
+					break;
+				}
+			}
+
+			// Add new material if not found
+			if (acMatIndex < 0)
+			{
+				acMatIndex = materials.Count;
+				materials.Add(acMat);
+			}
+		}
+
+		// Set texture if found
+		if (!string.IsNullOrEmpty(texturePath))
+		{
+			TextureFiles.Add(texturePath);
+			poly.Texture = Path.GetFileName(texturePath);
+		}
+
+		// Create surfaces from triangles
+		if (indices != null)
+		{
+			for (int i = 0; i < indices.Length; i += 3)
+			{
+				if (i + 2 >= indices.Length) break;
+
+				Surface surf = poly.AddSurface(0x20); // shaded polygon
+				surf.MaterialIndex = acMatIndex;
+
+				// Add vertices in reverse order to fix winding
+				for (int j = 2; j >= 0; j--)
+				{
+					int idx = indices[i + j];
+					Vector2 uv = texCoords != null && idx < texCoords.Length ? texCoords[idx] : Vector2.Zero;
+					// Flip V coordinate for AC3D
+					uv.Y = 1.0f - uv.Y;
+					surf.AddRef(idx, uv);
+				}
+			}
+		}
+		else if (positions.Length >= 3)
+		{
+			// No indices, treat as triangle list
+			for (int i = 0; i < positions.Length; i += 3)
+			{
+				if (i + 2 >= positions.Length) break;
+
+				Surface surf = poly.AddSurface(0x20);
+				surf.MaterialIndex = acMatIndex;
+
+				// Add vertices in reverse order to fix winding
+				for (int j = 2; j >= 0; j--)
+				{
+					int idx = i + j;
+					Vector2 uv = texCoords != null && idx < texCoords.Length ? texCoords[idx] : Vector2.Zero;
+					// Flip V coordinate for AC3D
+					uv.Y = 1.0f - uv.Y;
+					surf.AddRef(idx, uv);
+				}
+			}
+		}
+
+		return poly;
+	}
+
+	private static Vector3[] LoadPositionData(JObject accessorJson, JArray bufferViewsJson, byte[] binBytes)
+	{
+		int count = accessorJson["count"]!.Value<int>();
+		JObject bufferView = (JObject)bufferViewsJson[accessorJson["bufferView"]!.Value<int>()];
+		int accessorByteOffset = accessorJson["byteOffset"]?.Value<int>() ?? 0;
+		int bufferViewByteOffset = bufferView["byteOffset"]?.Value<int>() ?? 0;
+		int stride = bufferView["byteStride"]?.Value<int>() ?? 12; // 3 floats * 4 bytes
+
+		Vector3[] positions = new Vector3[count];
+		for (int i = 0; i < count; i++)
+		{
+			int offset = bufferViewByteOffset + accessorByteOffset + (i * stride);
+			positions[i] = new Vector3(
+				BitConverter.ToSingle(binBytes, offset),
+				BitConverter.ToSingle(binBytes, offset + 4),
+				BitConverter.ToSingle(binBytes, offset + 8)
+			);
+		}
+		return positions;
+	}
+
+	private static Vector2[] LoadTexCoordData(JObject accessorJson, JArray bufferViewsJson, byte[] binBytes)
+	{
+		int count = accessorJson["count"]!.Value<int>();
+		JObject bufferView = (JObject)bufferViewsJson[accessorJson["bufferView"]!.Value<int>()];
+		int accessorByteOffset = accessorJson["byteOffset"]?.Value<int>() ?? 0;
+		int bufferViewByteOffset = bufferView["byteOffset"]?.Value<int>() ?? 0;
+		int stride = bufferView["byteStride"]?.Value<int>() ?? 8; // 2 floats * 4 bytes
+
+		Vector2[] texCoords = new Vector2[count];
+		for (int i = 0; i < count; i++)
+		{
+			int offset = bufferViewByteOffset + accessorByteOffset + (i * stride);
+			texCoords[i] = new Vector2(
+				BitConverter.ToSingle(binBytes, offset),
+				BitConverter.ToSingle(binBytes, offset + 4)
+			);
+		}
+		return texCoords;
+	}
+
+	private static int[] LoadIndexData(JObject accessorJson, JArray bufferViewsJson, byte[] binBytes)
+	{
+		int count = accessorJson["count"]!.Value<int>();
+		JObject bufferView = (JObject)bufferViewsJson[accessorJson["bufferView"]!.Value<int>()];
+		int accessorByteOffset = accessorJson["byteOffset"]?.Value<int>() ?? 0;
+		int bufferViewByteOffset = bufferView["byteOffset"]?.Value<int>() ?? 0;
+		int componentType = accessorJson["componentType"]!.Value<int>();
+
+		int[] indices = new int[count];
+		for (int i = 0; i < count; i++)
+		{
+			int offset = bufferViewByteOffset + accessorByteOffset;
+			indices[i] = componentType switch
+			{
+				5121 => binBytes[offset + i], // UNSIGNED_BYTE
+				5123 => BitConverter.ToUInt16(binBytes, offset + (i * 2)), // UNSIGNED_SHORT
+				5125 => (int)BitConverter.ToUInt32(binBytes, offset + (i * 4)), // UNSIGNED_INT
+				_ => 0
+			};
+		}
+		return indices;
+	}
+
 	public void WriteToFile(string path)
 	{
 		using StreamWriter writer = new(path);
@@ -404,6 +663,15 @@ public class AcBuilder
 		foreach (Object obj in Objects)
 		{
 			obj.WriteTo(writer);
+		}
+
+		foreach (string texFile in TextureFiles)
+		{
+			string destTexPath = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileName(texFile));
+			if (!File.Exists(destTexPath))
+			{
+				File.Copy(texFile, destTexPath);
+			}
 		}
 	}
 }

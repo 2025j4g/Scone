@@ -262,6 +262,7 @@ public class SceneryConverter : INotifyPropertyChanged
 			}
 		}
 		totalModelCount = modelReferencesByTile.Values.Sum(l => l.Count);
+		if (isGltf && isAc3d) totalModelCount *= 2;
 		Logger.Info($"Found {totalModelCount} models");
 
 		foreach (var kvp in modelReferencesByTile)
@@ -282,37 +283,37 @@ public class SceneryConverter : INotifyPropertyChanged
 			if (isAc3d)
 			{
 				ConvertSceneryAc3d(inputPath, outputPath, kvp, center);
-		}
-	}
-
-	// Report unused LibraryObjects (placements without models)
-	List<Guid> unusedGuids = libraryObjects.Keys.Where(guid => !guidsWithModels.Contains(guid)).ToList();
-	if (unusedGuids.Count > 0)
-	{
-		Logger.Info($"\n=== Found {unusedGuids.Count} LibraryObject GUIDs with placements but no models ===");
-		int totalUnusedPlacements = 0;
-		foreach (var guid in unusedGuids)
-		{
-			int placementCount = libraryObjects[guid].Count;
-			totalUnusedPlacements += placementCount;
-			Logger.Debug($"GUID: {guid} - {placementCount} placement(s)");
-			// Show first placement as example
-			if (libraryObjects[guid].Count > 0)
-			{
-				var example = libraryObjects[guid][0];
-				Logger.Debug($"  Example: Lat {example.latitude:F6}, Lon {example.longitude:F6}, Alt {example.altitude:F2}m");
 			}
 		}
-		Logger.Info($"Total unused placements: {totalUnusedPlacements}");
-	}
-	else
-	{
-		Logger.Info("\nAll LibraryObjects have corresponding models.");
-	}
 
-	Logger.Info("Conversion complete.");
-	Logger.FlushToFile();
-}
+		// Report unused LibraryObjects (placements without models)
+		List<Guid> unusedGuids = [.. libraryObjects.Keys.Where(guid => !guidsWithModels.Contains(guid))];
+		if (unusedGuids.Count > 0)
+		{
+			Logger.Info($"\n=== Found {unusedGuids.Count} LibraryObject GUIDs with placements but no models ===");
+			int totalUnusedPlacements = 0;
+			foreach (var guid in unusedGuids)
+			{
+				int placementCount = libraryObjects[guid].Count;
+				totalUnusedPlacements += placementCount;
+				Logger.Debug($"GUID: {guid} - {placementCount} placement(s)");
+				// Show first placement as example
+				if (libraryObjects[guid].Count > 0)
+				{
+					var example = libraryObjects[guid][0];
+					Logger.Debug($"  Example: Lat {example.latitude:F6}, Lon {example.longitude:F6}, Alt {example.altitude:F2}m");
+				}
+			}
+			Logger.Info($"Total unused placements: {totalUnusedPlacements}");
+		}
+		else
+		{
+			Logger.Info("\nAll LibraryObjects have corresponding models.");
+		}
+
+		Logger.Info("Conversion complete.");
+		Logger.FlushToFile();
+	}
 
 
 	public void ConvertSceneryGltf(string inputPath, string outputPath, KeyValuePair<int, List<ModelReference>> kvp, Vector3 center)
@@ -1016,6 +1017,9 @@ public class SceneryConverter : INotifyPropertyChanged
 		JArray materials = (JArray)json["materials"]!;
 		JArray textures = (JArray)json["textures"]!;
 		Dictionary<int, List<int>> meshIndexToSceneNodeIndex = [];
+
+		List<AcBuilder.Material> acMaterials = [];
+
 		for (int k = 0; k < json["nodes"]!.Count(); k++)
 		{
 			JObject node = (JObject)json["nodes"]![k]!;
@@ -1083,25 +1087,40 @@ public class SceneryConverter : INotifyPropertyChanged
 
 		foreach (JObject mesh in meshes.Cast<JObject>())
 		{
-			/* MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty>? meshBuilder = GlbBuilder.BuildMesh(inputPath, file, mesh, accessors, bufferViews, materials, textures, images, glbBinBytes);
-			if (meshBuilder == null) continue;
+			AcBuilder.Poly? poly = scene.BuildPolyFromGltf(inputPath, file, mesh, accessors, bufferViews, materials, textures, images, glbBinBytes, ref acMaterials);
+			if (poly == null) continue;
+
 			int meshIdx = meshes.IndexOf(mesh);
-			if (!meshIndexToSceneNodeIndex.TryGetValue(meshIdx, out List<int>? nodeIndices)) continue;
+			if (!meshIndexToSceneNodeIndex.TryGetValue(meshIdx, out List<int>? nodeIndices))
+			{
+				// No node references this mesh, add it directly
+				scene.Objects.Add(poly);
+				continue;
+			}
+
 			foreach (int nodeIndex in nodeIndices)
 			{
 				Matrix4x4 transform = GetWorldTransform(nodeIndex);
-				// Validate matrix before passing to SharpGLTF
+
+				// Validate matrix
 				if (!(float.IsFinite(transform.M11) && float.IsFinite(transform.M12) && float.IsFinite(transform.M13) && float.IsFinite(transform.M14)
 					&& float.IsFinite(transform.M21) && float.IsFinite(transform.M22) && float.IsFinite(transform.M23) && float.IsFinite(transform.M24)
 					&& float.IsFinite(transform.M31) && float.IsFinite(transform.M32) && float.IsFinite(transform.M33) && float.IsFinite(transform.M34)
 					&& float.IsFinite(transform.M41) && float.IsFinite(transform.M42) && float.IsFinite(transform.M43) && float.IsFinite(transform.M44)))
 				{
-					// Skip this mesh if transform is invalid to prevent runtime exception
 					continue;
 				}
-				_ = scene.AddRigidMesh(meshBuilder, transform);
-			} */
+
+				// Create a temporary AcBuilder for this poly and merge it with transform
+				AcBuilder temp = new();
+				temp.Objects.Add(poly);
+				scene.Merge(temp, transform);
+			}
 		}
+
+		// Add materials to scene
+		scene.Materials.AddRange(acMaterials);
+
 		return scene;
 	}
 

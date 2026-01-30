@@ -334,14 +334,14 @@ public class Terrain
 		string lonHemi = longitude >= 0 ? "e" : "w";
 		string latHemi = latitude >= 0 ? "n" : "s";
 		string terrainDir = $"Terrain/{lonHemi}{Math.Abs(Math.Floor(longitude / 10)) * 10:000}{latHemi}{Math.Abs(Math.Floor(latitude / 10)) * 10:00}/{lonHemi}{Math.Abs(Math.Floor(longitude)):000}{latHemi}{Math.Abs(Math.Floor(latitude)):00}";
-		string urlTopLevel = $"https://terramaster.flightgear.org/terrasync/ws3/{terrainDir}";
+		string urlTopLevel = $"https://terramaster.flightgear.org/terrasync/ws2/{terrainDir}";
 		double elevation = 0;
 		try
 		{
 			if (!tileCache.TryGetValue(index, out TileKey? value))
 			{
 				byte[] stgData = client.GetByteArrayAsync($"{urlTopLevel}/{index}.stg").Result;
-				MatchCollection matches = new Regex(@"OBJECT (.+\.btg)", RegexOptions.Multiline).Matches(Encoding.UTF8.GetString(stgData));
+				MatchCollection matches = new Regex(@"OBJECT(_BASE)? (.+\.btg)", RegexOptions.Multiline).Matches(Encoding.UTF8.GetString(stgData));
 				List<BtgParseResult> meshes = [];
 				foreach (Match match in matches)
 				{
