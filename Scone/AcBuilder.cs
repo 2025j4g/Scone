@@ -746,7 +746,7 @@ public sealed class AcBuilder
 			writer.WriteLine($"numvert {Vertices.Count}");
 			foreach (Vector3 vertex in Vertices)
 			{
-				writer.WriteLine($"{FormatFloat(vertex.X)} {FormatFloat(vertex.Y)} {FormatFloat(vertex.Z)}");
+				writer.WriteLine($"{FormatFloat(-vertex.X)} {FormatFloat(vertex.Y)} {FormatFloat(vertex.Z)}");
 			}
 			writer.WriteLine($"numsurf {Surfaces.Count}");
 			foreach (AcSurface surface in Surfaces)

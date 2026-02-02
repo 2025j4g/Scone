@@ -276,13 +276,229 @@ public class SceneryConverter : INotifyPropertyChanged
 				(float)(libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.longitude) / libraryObjectsForTile.Count : 0.0),
 				(float)(libraryObjectsForTile.Count > 0 ? libraryObjectsForTile.Sum(lo => lo.altitude) / libraryObjectsForTile.Count : 0.0)
 			);
+			SceneBuilder tileSceneGltf = new();
+			AcBuilder tileSceneAc = new();
 			if (isGltf)
 			{
-				ConvertSceneryGltf(inputPath, outputPath, kvp, center);
+				tileSceneGltf = ConvertSceneryGltf(inputPath, outputPath, kvp, center);
 			}
 			if (isAc3d)
 			{
-				ConvertSceneryAc3d(inputPath, outputPath, kvp, center);
+				tileSceneAc = ConvertSceneryAc3d(inputPath, outputPath, kvp, center);
+			}
+			(double lat, double lon) = Terrain.GetLatLon(tileIndex);
+			string lonHemi = lon >= 0 ? "e" : "w";
+			string latHemi = lat >= 0 ? "n" : "s";
+			string path = $"{outputPath}/Objects/{lonHemi}{Math.Abs(Math.Floor(lon / 10)) * 10:000}{latHemi}{Math.Abs(Math.Floor(lat / 10)) * 10:00}/{lonHemi}{Math.Abs(Math.Floor(lon)):000}{latHemi}{Math.Abs(Math.Floor(lat)):00}";
+			if (!Directory.Exists(path))
+			{
+				_ = Directory.CreateDirectory(path);
+			}
+
+			if (isAc3d)
+			{
+				string outAcPath = Path.Combine(path, $"{tileIndex}.ac");
+				if (tileSceneAc.Objects.Count == 0)
+				{
+					Logger.Info($"Tile {tileIndex} produced no geometry for AC3D export; skipping file generation.");
+				}
+				else
+				{
+					Status = "Saving model to disk...";
+					tileSceneAc.WriteToFile(outAcPath);
+				}
+			}
+
+			if (isGltf)
+			{
+				string outGlbPath = Path.Combine(path, $"{tileIndex}.gltf");
+				Status = "Saving model to disk...";
+				tileSceneGltf.ToGltf2().SaveGLTF(outGlbPath, new WriteSettings
+				{
+					ImageWriting = ResourceWriteMode.SatelliteFile,
+					// This name doesn't matter; we will fix up the URIs in the postprocessor
+					ImageWriteCallback = (context, assetName, image) => { return ""; },
+					JsonPostprocessor = (json) =>
+					{
+						JObject gltfText = JObject.Parse(json);
+						Dictionary<string, int> imageUriToIndex = [];
+						JArray images = [];
+						// Assign proper sources for textures using extensions
+						foreach (JObject mat in gltfText["materials"]?.Cast<JObject>() ?? [])
+						{
+							if (mat["pbrMetallicRoughness"]?["baseColorTexture"] != null)
+							{
+								string baseColorTex = mat["extras"]!["baseColorTexture"]!.Value<string>() ?? "";
+								int texIndex = mat["pbrMetallicRoughness"]!["baseColorTexture"]!["index"]!.Value<int>();
+								JObject currentTexture = new()
+								{
+									["extensions"] = new JObject
+									{
+										["MSFT_texture_dds"] = new JObject
+										{
+											["source"] = images.Count
+										}
+									},
+									["source"] = images.Count
+								};
+								if (imageUriToIndex.TryGetValue(baseColorTex, out int existingIndex))
+								{
+									currentTexture["source"] = existingIndex;
+									currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
+								}
+								else
+								{
+									imageUriToIndex[baseColorTex] = images.Count;
+									images.Add(new JObject
+									{
+										["uri"] = Path.GetFileName(baseColorTex)
+									});
+								}
+								gltfText["textures"]?[texIndex] = currentTexture;
+								File.Copy(baseColorTex, Path.Combine(path, Path.GetFileName(baseColorTex)), true);
+							}
+							if (mat["pbrMetallicRoughness"]?["metallicRoughnessTexture"] != null)
+							{
+								string metallicRoughnessTex = mat["extras"]!["metallicRoughnessTexture"]!.Value<string>() ?? "";
+								int texIndex = mat["pbrMetallicRoughness"]!["metallicRoughnessTexture"]!["index"]!.Value<int>();
+								JObject currentTexture = new()
+								{
+									["extensions"] = new JObject
+									{
+										["MSFT_texture_dds"] = new JObject
+										{
+											["source"] = images.Count
+										}
+									},
+									["source"] = images.Count
+								};
+								if (imageUriToIndex.TryGetValue(metallicRoughnessTex, out int existingIndex))
+								{
+									currentTexture["source"] = existingIndex;
+									currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
+								}
+								else
+								{
+									imageUriToIndex[metallicRoughnessTex] = images.Count;
+									images.Add(new JObject
+									{
+										["uri"] = Path.GetFileName(metallicRoughnessTex)
+									});
+								}
+								gltfText["textures"]?[texIndex] = currentTexture;
+								File.Copy(metallicRoughnessTex, Path.Combine(path, Path.GetFileName(metallicRoughnessTex)), true);
+							}
+							if (mat["normalTexture"] != null)
+							{
+								string normaTex = mat["extras"]!["normalTexture"]!.Value<string>() ?? "";
+								int texIndex = mat["normalTexture"]!["index"]!.Value<int>();
+								JObject currentTexture = new()
+								{
+									["extensions"] = new JObject
+									{
+										["MSFT_texture_dds"] = new JObject
+										{
+											["source"] = images.Count
+										}
+									},
+									["source"] = images.Count
+								};
+								if (imageUriToIndex.TryGetValue(normaTex, out int existingIndex))
+								{
+									currentTexture["source"] = existingIndex;
+									currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
+								}
+								else
+								{
+									imageUriToIndex[normaTex] = images.Count;
+									images.Add(new JObject
+									{
+										["uri"] = Path.GetFileName(normaTex)
+									});
+								}
+								gltfText["textures"]?[texIndex] = currentTexture;
+								File.Copy(normaTex, Path.Combine(path, Path.GetFileName(normaTex)), true);
+							}
+							if (mat["occlusionTexture"] != null)
+							{
+								string occlusionTex = mat["extras"]!["occlusionTexture"]!.Value<string>() ?? "";
+								int texIndex = mat["occlusionTexture"]!["index"]!.Value<int>();
+								JObject currentTexture = new()
+								{
+									["extensions"] = new JObject
+									{
+										["MSFT_texture_dds"] = new JObject
+										{
+											["source"] = images.Count
+										}
+									},
+									["source"] = images.Count
+								};
+								if (imageUriToIndex.TryGetValue(occlusionTex, out int existingIndex))
+								{
+									currentTexture["source"] = existingIndex;
+									currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
+								}
+								else
+								{
+									imageUriToIndex[occlusionTex] = images.Count;
+									images.Add(new JObject
+									{
+										["uri"] = Path.GetFileName(occlusionTex)
+									});
+								}
+								gltfText["textures"]?[texIndex] = currentTexture;
+								File.Copy(occlusionTex, Path.Combine(path, Path.GetFileName(occlusionTex)), true);
+							}
+							if (mat["emissiveTexture"] != null)
+							{
+								string emissiveTex = mat["extras"]!["emissiveTexture"]!.Value<string>() ?? "";
+								int texIndex = mat["emissiveTexture"]!["index"]!.Value<int>();
+								JObject currentTexture = new()
+								{
+									["extensions"] = new JObject
+									{
+										["MSFT_texture_dds"] = new JObject
+										{
+											["source"] = images.Count
+										}
+									},
+									["source"] = images.Count
+								};
+								if (imageUriToIndex.TryGetValue(emissiveTex, out int existingIndex))
+								{
+									currentTexture["source"] = existingIndex;
+									currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
+								}
+								else
+								{
+									imageUriToIndex[emissiveTex] = images.Count;
+									images.Add(new JObject
+									{
+										["uri"] = Path.GetFileName(emissiveTex)
+									});
+								}
+								gltfText["textures"]?[texIndex] = currentTexture;
+								File.Copy(emissiveTex, Path.Combine(path, Path.GetFileName(emissiveTex)), true);
+							}
+						}
+						gltfText["images"] = images;
+						return gltfText.ToString();
+					}
+				});
+			}
+
+			bool hasXml = isGltf && isAc3d;
+			string activeName = $"{tileIndex}.{(hasXml ? "xml" : (isGltf ? "gltf" : "ac"))}";
+			string placementStr = $"OBJECT_STATIC {activeName} {center.Y} {center.X} {center.Z} {180} {0} {0}";
+			XmlDocument xmlDoc = new();
+			XmlElement root = xmlDoc.CreateElement("PropertyList");
+			// root.AppendChild("model");
+			File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
+			if (AbortAndSave)
+			{
+				Logger.Info("Conversion aborted by user; saving progress.");
+				return;
 			}
 		}
 
@@ -316,7 +532,7 @@ public class SceneryConverter : INotifyPropertyChanged
 	}
 
 
-	public void ConvertSceneryGltf(string inputPath, string outputPath, KeyValuePair<int, List<ModelReference>> kvp, Vector3 center)
+	public SceneBuilder ConvertSceneryGltf(string inputPath, string outputPath, KeyValuePair<int, List<ModelReference>> kvp, Vector3 center)
 	{
 		int tileIndex = kvp.Key;
 		List<ModelReference> modelRefs = [.. kvp.Value.OrderByDescending(mr => mr.size)];
@@ -329,7 +545,7 @@ public class SceneryConverter : INotifyPropertyChanged
 			if (AbortAndCancel)
 			{
 				Logger.Info("Conversion aborted by user.");
-				return;
+				return scene;
 			}
 			modelsProcessed++;
 			List<LibraryObject> libraryObjectsForModel = libraryObjects.TryGetValue(modelRef.guid, out List<LibraryObject>? value) ? value : [];
@@ -499,182 +715,6 @@ public class SceneryConverter : INotifyPropertyChanged
 			_ = Directory.CreateDirectory(path);
 		}
 
-		string outGlbPath = Path.Combine(path, $"{tileIndex}.gltf");
-		Status = "Saving model to disk...";
-		scene.ToGltf2().SaveGLTF(outGlbPath, new WriteSettings
-		{
-			ImageWriting = ResourceWriteMode.SatelliteFile,
-			// This name doesn't matter; we will fix up the URIs in the postprocessor
-			ImageWriteCallback = (context, assetName, image) => { return ""; },
-			JsonPostprocessor = (json) =>
-			{
-				JObject gltfText = JObject.Parse(json);
-				Dictionary<string, int> imageUriToIndex = [];
-				JArray images = [];
-				// Assign proper sources for textures using extensions
-				foreach (JObject mat in gltfText["materials"]?.Cast<JObject>() ?? [])
-				{
-					if (mat["pbrMetallicRoughness"]?["baseColorTexture"] != null)
-					{
-						string baseColorTex = mat["extras"]!["baseColorTexture"]!.Value<string>() ?? "";
-						int texIndex = mat["pbrMetallicRoughness"]!["baseColorTexture"]!["index"]!.Value<int>();
-						JObject currentTexture = new()
-						{
-							["extensions"] = new JObject
-							{
-								["MSFT_texture_dds"] = new JObject
-								{
-									["source"] = images.Count
-								}
-							},
-							["source"] = images.Count
-						};
-						if (imageUriToIndex.TryGetValue(baseColorTex, out int existingIndex))
-						{
-							currentTexture["source"] = existingIndex;
-							currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
-						}
-						else
-						{
-							imageUriToIndex[baseColorTex] = images.Count;
-							images.Add(new JObject
-							{
-								["uri"] = Path.GetFileName(baseColorTex)
-							});
-						}
-						gltfText["textures"]?[texIndex] = currentTexture;
-						File.Copy(baseColorTex, Path.Combine(path, Path.GetFileName(baseColorTex)), true);
-					}
-					if (mat["pbrMetallicRoughness"]?["metallicRoughnessTexture"] != null)
-					{
-						string metallicRoughnessTex = mat["extras"]!["metallicRoughnessTexture"]!.Value<string>() ?? "";
-						int texIndex = mat["pbrMetallicRoughness"]!["metallicRoughnessTexture"]!["index"]!.Value<int>();
-						JObject currentTexture = new()
-						{
-							["extensions"] = new JObject
-							{
-								["MSFT_texture_dds"] = new JObject
-								{
-									["source"] = images.Count
-								}
-							},
-							["source"] = images.Count
-						};
-						if (imageUriToIndex.TryGetValue(metallicRoughnessTex, out int existingIndex))
-						{
-							currentTexture["source"] = existingIndex;
-							currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
-						}
-						else
-						{
-							imageUriToIndex[metallicRoughnessTex] = images.Count;
-							images.Add(new JObject
-							{
-								["uri"] = Path.GetFileName(metallicRoughnessTex)
-							});
-						}
-						gltfText["textures"]?[texIndex] = currentTexture;
-						File.Copy(metallicRoughnessTex, Path.Combine(path, Path.GetFileName(metallicRoughnessTex)), true);
-					}
-					if (mat["normalTexture"] != null)
-					{
-						string normaTex = mat["extras"]!["normalTexture"]!.Value<string>() ?? "";
-						int texIndex = mat["normalTexture"]!["index"]!.Value<int>();
-						JObject currentTexture = new()
-						{
-							["extensions"] = new JObject
-							{
-								["MSFT_texture_dds"] = new JObject
-								{
-									["source"] = images.Count
-								}
-							},
-							["source"] = images.Count
-						};
-						if (imageUriToIndex.TryGetValue(normaTex, out int existingIndex))
-						{
-							currentTexture["source"] = existingIndex;
-							currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
-						}
-						else
-						{
-							imageUriToIndex[normaTex] = images.Count;
-							images.Add(new JObject
-							{
-								["uri"] = Path.GetFileName(normaTex)
-							});
-						}
-						gltfText["textures"]?[texIndex] = currentTexture;
-						File.Copy(normaTex, Path.Combine(path, Path.GetFileName(normaTex)), true);
-					}
-					if (mat["occlusionTexture"] != null)
-					{
-						string occlusionTex = mat["extras"]!["occlusionTexture"]!.Value<string>() ?? "";
-						int texIndex = mat["occlusionTexture"]!["index"]!.Value<int>();
-						JObject currentTexture = new()
-						{
-							["extensions"] = new JObject
-							{
-								["MSFT_texture_dds"] = new JObject
-								{
-									["source"] = images.Count
-								}
-							},
-							["source"] = images.Count
-						};
-						if (imageUriToIndex.TryGetValue(occlusionTex, out int existingIndex))
-						{
-							currentTexture["source"] = existingIndex;
-							currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
-						}
-						else
-						{
-							imageUriToIndex[occlusionTex] = images.Count;
-							images.Add(new JObject
-							{
-								["uri"] = Path.GetFileName(occlusionTex)
-							});
-						}
-						gltfText["textures"]?[texIndex] = currentTexture;
-						File.Copy(occlusionTex, Path.Combine(path, Path.GetFileName(occlusionTex)), true);
-					}
-					if (mat["emissiveTexture"] != null)
-					{
-						string emissiveTex = mat["extras"]!["emissiveTexture"]!.Value<string>() ?? "";
-						int texIndex = mat["emissiveTexture"]!["index"]!.Value<int>();
-						JObject currentTexture = new()
-						{
-							["extensions"] = new JObject
-							{
-								["MSFT_texture_dds"] = new JObject
-								{
-									["source"] = images.Count
-								}
-							},
-							["source"] = images.Count
-						};
-						if (imageUriToIndex.TryGetValue(emissiveTex, out int existingIndex))
-						{
-							currentTexture["source"] = existingIndex;
-							currentTexture["extensions"]!["MSFT_texture_dds"]!["source"] = existingIndex;
-						}
-						else
-						{
-							imageUriToIndex[emissiveTex] = images.Count;
-							images.Add(new JObject
-							{
-								["uri"] = Path.GetFileName(emissiveTex)
-							});
-						}
-						gltfText["textures"]?[texIndex] = currentTexture;
-						File.Copy(emissiveTex, Path.Combine(path, Path.GetFileName(emissiveTex)), true);
-					}
-				}
-				gltfText["images"] = images;
-				return gltfText.ToString();
-			}
-		});
-
 		bool hasXml = false;
 		string activeName = $"{tileIndex}.{(hasXml ? "xml" : "gltf")}";
 		string placementStr = $"OBJECT_STATIC {activeName} {lonOrigin} {latOrigin} {altOrigin} {270} {0} {90}";
@@ -682,11 +722,12 @@ public class SceneryConverter : INotifyPropertyChanged
 		if (AbortAndSave)
 		{
 			Logger.Info("Conversion aborted by user; saving progress.");
-			return;
+			return scene;
 		}
+		return scene;
 	}
 
-	public void ConvertSceneryAc3d(string inputPath, string outputPath, KeyValuePair<int, List<ModelReference>> kvp, Vector3 center)
+	public AcBuilder ConvertSceneryAc3d(string inputPath, string outputPath, KeyValuePair<int, List<ModelReference>> kvp, Vector3 center)
 	{
 		int tileIndex = kvp.Key;
 		List<ModelReference> modelRefs = [.. kvp.Value.OrderByDescending(mr => mr.size)];
@@ -702,7 +743,7 @@ public class SceneryConverter : INotifyPropertyChanged
 			if (AbortAndCancel)
 			{
 				Logger.Info("Conversion aborted by user.");
-				return;
+				return tileScene;
 			}
 			modelsProcessed++;
 			List<LibraryObject> libraryObjectsForModel = libraryObjects.TryGetValue(modelRef.guid, out List<LibraryObject>? value) ? value : [];
@@ -857,35 +898,7 @@ public class SceneryConverter : INotifyPropertyChanged
 				break;
 			}
 		}
-		(double lat, double lon) = Terrain.GetLatLon(tileIndex);
-		string lonHemi = lon >= 0 ? "e" : "w";
-		string latHemi = lat >= 0 ? "n" : "s";
-		string path = $"{outputPath}/Objects/{lonHemi}{Math.Abs(Math.Floor(lon / 10)) * 10:000}{latHemi}{Math.Abs(Math.Floor(lat / 10)) * 10:00}/{lonHemi}{Math.Abs(Math.Floor(lon)):000}{latHemi}{Math.Abs(Math.Floor(lat)):00}";
-		if (!Directory.Exists(path))
-		{
-			_ = Directory.CreateDirectory(path);
-		}
-
-		string outAcPath = Path.Combine(path, $"{tileIndex}.ac");
-		if (tileScene.Objects.Count == 0)
-		{
-			Logger.Info($"Tile {tileIndex} produced no geometry for AC3D export; skipping file generation.");
-		}
-		else
-		{
-			Status = "Saving model to disk...";
-			tileScene.WriteToFile(outAcPath);
-		}
-
-		bool hasXml = false;
-		string activeName = $"{tileIndex}.{(hasXml ? "xml" : "ac")}";
-		string placementStr = $"OBJECT_STATIC {activeName} {lonOrigin} {latOrigin} {altOrigin} {0} {0} {0}";
-		File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
-		if (AbortAndSave)
-		{
-			Logger.Info("Conversion aborted by user; saving progress.");
-			return;
-		}
+		return tileScene;
 	}
 
 	private static SceneBuilder CreateGltfModelFromGltf(byte[] glbBinBytes, JObject json, string inputPath, string file)
