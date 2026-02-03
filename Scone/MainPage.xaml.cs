@@ -162,6 +162,8 @@ public sealed partial class MainPage : Page
 		AddTaskOverlay.Visibility = Visibility.Collapsed;
 		FolderPathInput.Text = string.Empty;
 		TaskNameInput.Text = string.Empty;
+		GltfFormatToggle.IsChecked = true;
+		Ac3dFormatToggle.IsChecked = true;
 	}
 
 	private void ConfirmTaskButton_Click(object sender, RoutedEventArgs e)
@@ -186,13 +188,31 @@ public sealed partial class MainPage : Page
 			}
 		}
 
+		// Determine the selected format from toggle buttons
+		bool isGltf = GltfFormatToggle.IsChecked == true;
+		bool isAc3d = Ac3dFormatToggle.IsChecked == true;
+
+		// Validate that at least one format is selected
+		if (!isGltf && !isAc3d)
+		{
+			ShowErrorDialog("Please select at least one output format.");
+			return;
+		}
+
+		ConversionFormat format = ConversionFormat.Both;
+		if (isGltf && !isAc3d)
+			format = ConversionFormat.GltfOnly;
+		else if (!isGltf && isAc3d)
+			format = ConversionFormat.Ac3dOnly;
+
 		// Add the new task
 		DownloadTask newTask = new()
 		{
 			TaskName = taskName,
 			TaskPath = folderPath,
 			Progress = 0,
-			ProgressText = "0%"
+			ProgressText = "0%",
+			Format = format
 		};
 
 		tasks.Add(newTask);
@@ -202,6 +222,8 @@ public sealed partial class MainPage : Page
 		AddTaskOverlay.Visibility = Visibility.Collapsed;
 		FolderPathInput.Text = string.Empty;
 		TaskNameInput.Text = string.Empty;
+		GltfFormatToggle.IsChecked = true;
+		Ac3dFormatToggle.IsChecked = true;
 
 		// TODO: Start the actual download process for this task
 		StartDownloadTask(newTask);
@@ -256,12 +278,15 @@ public sealed partial class MainPage : Page
 
 		try
 		{
-			Logger.Info($"Starting conversion task: {task.TaskName} (Path: {task.TaskPath})");
+			bool isGltf = task.Format == ConversionFormat.Both || task.Format == ConversionFormat.GltfOnly;
+			bool isAc3d = task.Format == ConversionFormat.Both || task.Format == ConversionFormat.Ac3dOnly;
+
+			Logger.Info($"Starting conversion task: {task.TaskName} (Path: {task.TaskPath}, Format: {task.Format})");
 			await Task.Run(() =>
 			{
 				try
 				{
-					task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!);
+					task._converter.ConvertScenery(task.TaskPath, App.AppConfig.OutputDirectory!, isGltf && !isAc3d, isAc3d && !isGltf);
 				}
 				catch (Exception innerEx)
 				{
@@ -321,6 +346,7 @@ public class DownloadTask : INotifyPropertyChanged
 	private string _taskPath = string.Empty;
 	public readonly SceneryConverter _converter = new();
 	private bool _isRunning = false;
+	private ConversionFormat _format = ConversionFormat.Both;
 	private double _progress = 0;
 	private string _progressText = "0%";
 	private readonly DispatcherQueue _dispatcher;
@@ -429,10 +455,27 @@ public class DownloadTask : INotifyPropertyChanged
 		}
 	}
 
+	public ConversionFormat Format
+	{
+		get => _format;
+		set
+		{
+			_format = value;
+			OnPropertyChanged();
+		}
+	}
+
 	public event PropertyChangedEventHandler? PropertyChanged;
 
 	protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
 	{
 		PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 	}
+}
+
+public enum ConversionFormat
+{
+	Both,
+	GltfOnly,
+	Ac3dOnly
 }
