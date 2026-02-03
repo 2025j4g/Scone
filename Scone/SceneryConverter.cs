@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text;
 using System.Xml;
+using System.Xml.Linq;
 using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
@@ -490,10 +491,53 @@ public class SceneryConverter : INotifyPropertyChanged
 
 			bool hasXml = isGltf && isAc3d;
 			string activeName = $"{tileIndex}.{(hasXml ? "xml" : (isGltf ? "gltf" : "ac"))}";
-			string placementStr = $"OBJECT_STATIC {activeName} {center.Y} {center.X} {center.Z} {180} {0} {0}";
-			XmlDocument xmlDoc = new();
-			XmlElement root = xmlDoc.CreateElement("PropertyList");
-			// root.AppendChild("model");
+			string placementStr = $"OBJECT_STATIC {activeName} {center.Y} {center.X} {center.Z} {(hasXml ? 0 : (isAc3d && !isGltf ? 90 : 270))} {0} {(isAc3d && !isGltf ? 0 : 90)}";
+			if (hasXml)
+			{
+				XDocument doc = new(
+				new XElement("PropertyList",
+					new XElement("model",
+						new XElement("name", $"ac-{tileIndex}"),
+						new XElement("path", $"{tileIndex}.ac")),
+					new XElement("model",
+						new XElement("name", $"gltf-{tileIndex}"),
+						new XElement("path", $"{tileIndex}.gltf")),
+					new XElement("animation",
+						new XElement("object-name", $"ac-{tileIndex}"),
+						new XElement("type", "rotate"),
+						new XElement("offset-deg", "90"),
+						new XElement("axis",
+							new XElement("z", "1"))),
+					new XElement("animation",
+						new XElement("object-name", $"gltf-{tileIndex}"),
+						new XElement("type", "rotate"),
+						new XElement("offset-deg", "270"),
+						new XElement("axis",
+							new XElement("z", "1"))),
+					new XElement("animation",
+						new XElement("object-name", $"gltf-{tileIndex}"),
+						new XElement("type", "rotate"),
+						new XElement("offset-deg", "90"),
+						new XElement("axis",
+							new XElement("x", "1"))),
+					new XElement("animation",
+						new XElement("object-name", $"gltf-{tileIndex}"),
+						new XElement("type", "select"),
+						new XElement("condition",
+							new XElement("not",
+								new XElement("equals",
+									new XElement("property", "/sim/version/flightgear"),
+									new XElement("value", "2024.2.0"))))),
+					new XElement("animation",
+						new XElement("object-name", $"ac-{tileIndex}"),
+						new XElement("type", "select"),
+						new XElement("condition",
+							new XElement("equals",
+								new XElement("property", "/sim/version/flightgear"),
+								new XElement("value", "2024.2.0"))))));
+
+				doc.Save(Path.Combine(path, $"{tileIndex}.xml"));
+			}
 			File.WriteAllText(Path.Combine(path, $"{tileIndex}.stg"), placementStr);
 			if (AbortAndSave)
 			{
