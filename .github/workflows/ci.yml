@@ -116,3 +116,61 @@ jobs:
         with:
           name: scone-linux-${{ matrix.arch }}
           path: ./Scone/bin/Release/net10.0-desktop/linux-${{ matrix.arch }}/publish/
+
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs:
+      - smoke_test
+      - build_windows
+      - build_macos
+      - build_linux
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Next Version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          latest=$(git tag -l 'v*' | sort -V | tail -n1)
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          else
+            version=${latest#v}
+            IFS='.' read -r major minor patch <<<"$version"
+            patch=$((patch + 1))
+            next="v${major}.${minor}.${patch}"
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scone-*
+          path: dist
+          merge-multiple: false
+
+      - name: Package Artifacts
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p packaged
+          shopt -s nullglob
+          for artifact in dist/*; do
+            name=$(basename "$artifact")
+            zip -r "packaged/${name}.zip" "$artifact"
+          done
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.version.outputs.version }}
+          name: Scone ${{ steps.version.outputs.version }}
+          artifacts: packaged/*.zip
+          generateReleaseNotes: true
