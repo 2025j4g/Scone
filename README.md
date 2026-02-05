@@ -8,8 +8,6 @@ Scone turns Microsoft Flight Simulator (MSFS) scenery packages into editable glT
 - **Output directory** with enough free space for meshes and copied DDS textures.
 - **Scone build** for your OS (download from the Releases tab or build locally using `dotnet publish`).
 
-> Tip: Linux/macOS builds require case-sensitive filesystems, but Scone now searches for `.bgl` and texture names in a case-insensitive way, so you don’t need to rename assets.
-
 ## 2. Prepare the Scenery Folder
 
 1. Copy the scenery package you want to convert into a working location (e.g., `~/scenery/MyAirport/`).
@@ -52,51 +50,28 @@ Each tile ends up under `Objects/<lonBucket>/<latBucket>/<lon>/<lat>/`. Inside t
 | ------ | ------------- |
 | `<tile>.gltf/.glb` | Exported glTF scene (if glTF enabled). Textures referenced beside it. |
 | `<tile>.ac` | AC3D world with deduplicated vertices, corrected normals, and MSFS coordinate adjustments (if AC3D enabled). |
-| `<tile>.xml` | Only when both formats are produced: references both models and adds rotate/select animations so FlightGear or other sims can choose formats. |
+| `<tile>.xml` | ***Diabled currently:*** Only when both formats are produced: references both models and adds rotate/select animations so FlightGear or other sims can choose formats. |
 | `<tile>.stg` | Placement entry referencing `.gltf`, `.ac`, or `.xml` plus the tile center coordinates. |
 | `*.dds` textures | Copied base color, metallic/roughness, normal, occlusion, and emissive textures discovered during conversion. |
-
-Additional notes:
-
-- Meshes are mirrored to match Blender’s coordinate expectations, so you shouldn’t have to flip axes manually.
-- Vertex welding removes duplicates to keep `numvert` counts low, which makes AC3D lighter and reduces glTF size.
 
 ## 7. Format-Specific Tips
 
 ### glTF / GLB
 
-- Scone rewrites texture entries to reference local DDS files and keeps the JSON clean of MSFS-specific extras.
-- Satellite textures are copied next to the GLB; if you plan to move the output, keep textures in the same folder.
+- glTF files are lighter and support PBR materials natively, but are only usable in the nightly builds of FlightGear. More data from the original scenery pack is preserved in glTF exports.
 
 ### AC3D
 
-- `AcBuilder` writes one AC3D “world” per tile with each GUID as a child object.
-- Surface crease defaults to **30°** for sharper shading. Adjust in AC3D if you prefer softer edges.
-- Textures use the same filenames as the copied DDS assets, so keep them beside the `.ac` file when importing into other tools.
+- AC3D files are generally heavier and do not natively support PBR materials, but they are usable in both the latest and nightly builds of FlightGear. While Scone attempts to map PBR materials to AC3D’s simpler format, some visual fidelity may be lost and material mismatches can occur.
 
-## 8. Automating or Scripting Conversions
+## 8. Troubleshooting Checklist
 
-If you need hands-off processing, reference the converter directly from code:
-
-```csharp
-SceneryConverter converter = new();
-converter.ConvertScenery(
-    inputPath: @"C:\Scenery\MyAirport",
-    outputPath: @"D:\Exports",
-    isGltf: true,
-    isAc3d: false);
-```
-
-This uses the same pipeline as the UI. You can wrap it in CLI tooling or batch jobs if needed.
-
-## 9. Troubleshooting Checklist
-
-- **“No models found”** – verify the scenery folder actually contains model BGLs (look for `modellib.bgl` equivalents). Scone now searches case-insensitively, but the files must still exist.
+- **“No models found”** – verify the scenery folder actually contains model BGLs (look for `modellib.BGL` equivalents). Scone now searches case-insensitively, but the files must still exist.
 - **Textures missing in exports** – ensure the source folder contains the referenced DDS files. Scone logs each missing texture in the console/terminal.
 - **AC3D looks mirrored** – check that you’re viewing with a left-handed coordinate system. The exporter already mirrors to match Blender; no manual flips should be required.
 - **Large exports stall** – conversions run per tile; if a huge tile appears stuck, watch the log for progress. Use “Cancel & Save” to stop after the current tile, then re-run with a smaller scenery subset.
 
-## 10. Getting the App
+## 9. Getting the App
 
 - **Download** – grab the latest release artifact (`scone-<platform>-<arch>.zip`) from the GitHub Releases page.
 - **Build yourself** – clone the repo and run `dotnet publish Scone/Scone.csproj -c Release -r <RID>`. The published folder contains the executable and assets.
