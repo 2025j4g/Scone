@@ -361,7 +361,8 @@ public class SceneryConverter : INotifyPropertyChanged
 									});
 								}
 								gltfText["textures"]?[texIndex] = currentTexture;
-								File.Copy(baseColorTex, Path.Combine(path, Path.GetFileName(baseColorTex)), true);
+								if (!File.Exists(Path.Combine(path, Path.GetFileName(baseColorTex))))
+									File.Copy(baseColorTex, Path.Combine(path, Path.GetFileName(baseColorTex)));
 							}
 							if (mat["pbrMetallicRoughness"]?["metallicRoughnessTexture"] != null)
 							{
@@ -392,7 +393,8 @@ public class SceneryConverter : INotifyPropertyChanged
 									});
 								}
 								gltfText["textures"]?[texIndex] = currentTexture;
-								File.Copy(metallicRoughnessTex, Path.Combine(path, Path.GetFileName(metallicRoughnessTex)), true);
+								if (!File.Exists(Path.Combine(path, Path.GetFileName(metallicRoughnessTex))))
+									File.Copy(metallicRoughnessTex, Path.Combine(path, Path.GetFileName(metallicRoughnessTex)), true);
 							}
 							if (mat["normalTexture"] != null)
 							{
@@ -423,7 +425,8 @@ public class SceneryConverter : INotifyPropertyChanged
 									});
 								}
 								gltfText["textures"]?[texIndex] = currentTexture;
-								File.Copy(normaTex, Path.Combine(path, Path.GetFileName(normaTex)), true);
+								if (!File.Exists(Path.Combine(path, Path.GetFileName(normaTex))))
+									File.Copy(normaTex, Path.Combine(path, Path.GetFileName(normaTex)), true);
 							}
 							if (mat["occlusionTexture"] != null)
 							{
@@ -454,7 +457,8 @@ public class SceneryConverter : INotifyPropertyChanged
 									});
 								}
 								gltfText["textures"]?[texIndex] = currentTexture;
-								File.Copy(occlusionTex, Path.Combine(path, Path.GetFileName(occlusionTex)), true);
+								if (!File.Exists(Path.Combine(path, Path.GetFileName(occlusionTex))))
+									File.Copy(occlusionTex, Path.Combine(path, Path.GetFileName(occlusionTex)), true);
 							}
 							if (mat["emissiveTexture"] != null)
 							{
@@ -485,7 +489,8 @@ public class SceneryConverter : INotifyPropertyChanged
 									});
 								}
 								gltfText["textures"]?[texIndex] = currentTexture;
-								File.Copy(emissiveTex, Path.Combine(path, Path.GetFileName(emissiveTex)), true);
+								if (!File.Exists(Path.Combine(path, Path.GetFileName(emissiveTex))))
+									File.Copy(emissiveTex, Path.Combine(path, Path.GetFileName(emissiveTex)), true);
 							}
 						}
 						gltfText["images"] = images;
