@@ -270,6 +270,11 @@ public class SceneryConverter : INotifyPropertyChanged
 		totalModelCount = modelReferencesByTile.Values.Sum(l => l.Count);
 		if (isGltf && isAc3d) totalModelCount *= 2;
 		Logger.Info($"Found {totalModelCount} models");
+		if (totalModelCount == 0)
+		{
+			Status = "No models found to convert.";
+			return;
+		}
 
 		foreach (var kvp in modelReferencesByTile)
 		{

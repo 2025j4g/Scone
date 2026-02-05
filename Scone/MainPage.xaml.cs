@@ -296,10 +296,13 @@ public sealed partial class MainPage : Page
 			bool enqueued = DispatcherQueue.TryEnqueue(() =>
 			{
 				task.IsRunning = false;
-				task.Status = "Completed!";
+				if (task.Status != "No models found to convert.")
+				{
+					task.Status = "Completed!";
+				}
 
 				// Remove after a brief delay so user can see completion
-				_ = Task.Delay(2000).ContinueWith(_ =>
+				_ = Task.Delay(10000).ContinueWith(_ =>
 				{
 					DispatcherQueue.TryEnqueue(() =>
 					{
